@@ -1,0 +1,48 @@
+Content Model 
+    Main idea
+        title               -> how the summary is related to the title
+        question            -> how the summary is reletad to the question
+         
+    Details                 -> word_to_vec
+    Cohesion                -> count the conjection
+                            -> Scores of differences between sentences and sentences
+
+
+Wording Model
+    Voice
+        objective word      -> calculate the ration of the number of the objective word in summary to the number of the total words in summary.
+                            -> calculate the ration of the number of the unique objective word in summary to the number of the total unique words.
+    Paraphrase
+        paraphrase          -> word_to_vec
+                            -> calculate the ratio of the number of the word in summary to the number of the word in the prompt
+    Lanuage
+        lexis               -> count the number of unique words
+        syntax              -> count the number of unique grammar
+
+
+Feature not known which cagegory of each Model the belong to
+    Length
+        compression         -> compression ratio
+    
+
+Also give a opposite score to each model. e.g. calculate the ration of the number unique objective word in summary to the number of the total unique objective word in prompt. The ratio is then produced as logloss.
+
+
+1. create error free sentence
+    1. remove typo
+    2. remove syntax check
+2. carate some features
+    * ratio of the number of the word in summary to the number of the word in the prompt
+    * length of sentence in summary
+    * title
+    * question
+3. create model using the features
+    * pytorch
+4. train the model
+
+
+Handle in the future
+quotation has a lot of expression for example
+    * "dsfdsfs"
+    * 'sfsdfs'
+    * ... sfsdfd .....,
