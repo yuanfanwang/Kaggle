@@ -107,9 +107,8 @@ class ContentScoreRegressor:
         self.model_name = model_name
         self.model_dir = model_dir
         self.max_length = max_length
-
-        self.tokenizer = AutoTokenizer.from_pretrained(f"/kaggle/input/{model_name}")
-        self.model_config = AutoConfig.from_pretrained(f"/kaggle/input/{model_name}")
+        self.tokenizer = AutoTokenizer.from_pretrained("microsoft/deberta-v3-base")
+        self.model_config = AutoConfig.from_pretrained("microsoft/deberta-v3-base")
 
         self.model_config.update({
             "hidden_dropout_prob": hidden_dropout_prob,
@@ -158,7 +157,7 @@ class ContentScoreRegressor:
         valid_df = valid_df[self.text_cols + self.target_cols]
               
         model_content = AutoModelForSequenceClassification.from_pretrained(
-            f"/kaggle/input/{self.model_name}",
+            "microsoft/deberta-v3-base",
             config=self.model_config
         )
 
