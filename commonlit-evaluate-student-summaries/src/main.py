@@ -5,12 +5,19 @@ import torch
 import numpy as np
 import pandas as pd
 
+from sklearn.model_selection import mean_squared_error
+
+
 from spellchecker import SpellChecker
 
 prompts_test    = pd.read_csv('data/prompts_test.csv')
 prompts_train   = pd.read_csv('data/prompts_train.csv')
 summaries_train = pd.read_csv('data/summaries_train.csv')
 summaries_test  = pd.read_csv('data/summaries_test.csv')
+
+
+# shuffle
+# fold
 
 spell = SpellChecker()
 
@@ -40,4 +47,7 @@ for Text in summaries_train['text']:
         corrected_text.append(corrected_word)
 
     corrected_sentence = ' '.join(corrected_text)
+
+    # added feature to the table
+    # classifying this fucntion
 

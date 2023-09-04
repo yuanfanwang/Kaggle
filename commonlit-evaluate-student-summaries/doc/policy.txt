@@ -46,3 +46,8 @@ quotation has a lot of expression for example
     * "dsfdsfs"
     * 'sfsdfs'
     * ... sfsdfd .....,
+
+
+what do I wanna do
+input (prompt, summary, ..., point) to create model
+
