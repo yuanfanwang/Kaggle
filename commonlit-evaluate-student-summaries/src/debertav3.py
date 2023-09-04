@@ -84,3 +84,9 @@ def compute_mcrmes(eval_pred):
         "mcrmse": mcrmse,
     }
 
+def compt_score(content_true, content_pred, wording_true, wording_pred):
+    content_score = mean_squared_error(content_true, content_pred)**(1/2)
+    wordiing_score = mean_squared_error(wording_true, wording_pred)**(1/2)
+
+    return (content_score + wordiing_score) / 2
+
