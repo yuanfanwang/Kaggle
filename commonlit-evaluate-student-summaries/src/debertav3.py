@@ -64,8 +64,23 @@ test  = summaries_test.merge(prompts_test, how="left", on="prompt_id")
 
 gkf = GroupKFold(n_splits=CFG.n_splits)
 
-for i, (j, val_index) in enumerate(gkf.split(train, groups=train['prompt_id'])):
-    print(i, j, val_index)
+for i, (_, val_index) in enumerate(gkf.split(train, groups=train['prompt_id'])):
     train.loc[val_index, 'fold'] = int(i)
 
-train.head()
+def compute_metrics(eval_pred):
+    predictions, labels = eval_pred
+    rmse = mean_squared_error(labels, predictions, squared=False)
+    return {"rmse": rmse}
+
+def compute_mcrmes(eval_pred):
+    preds, labels = eval_pred
+
+    col_rmse = np.sqrt(np.mean((preds - labels) ** 2, axis=0))
+    mcrmse = np.mean(col_rmse)
+
+    return {
+        "content_rmse": col_rmse[0],
+        "wording_rmse": col_rmse[1],
+        "mcrmse": mcrmse,
+    }
+
