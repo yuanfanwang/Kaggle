@@ -1,12 +1,17 @@
 Content Model 
-    Main idea
-        title               -> how the summary is related to the title
-        question            -> how the summary is reletad to the question
+    Main idea:  How well did the summary capture the main idea of the source
+        1. title               -> how the summary is related to the title
+        2. question            -> how the summary is reletad to the question
          
-    Details                 -> word_to_vec
-    Cohesion                -> count the conjection
-                            -> Scores of differences between sentences and sentences
+    Details:    How accurately did the summary capture the details from the source
+        1. 
 
+    Cohesion:   How well did the summary trainsition from one idea to the next? 
+        1. count the conjection
+        2. Scores of differences between sentences and sentences
+        3. sentence count
+
+    Main idea               -> title 
 
 Wording Model
     Voice
@@ -18,6 +23,7 @@ Wording Model
     Lanuage
         lexis               -> count the number of unique words
         syntax              -> count the number of unique grammar
+
 
 
 Feature not known which cagegory of each Model the belong to
@@ -48,6 +54,28 @@ quotation has a lot of expression for example
     * ... sfsdfd .....,
 
 
-what do I wanna do
-input (prompt, summary, ..., point) to create model
+wordingとtextに相関はあるか？
+0.7513804859701966
 
+のように分けるのはどうか？
+
+pre
+    spellchecker
+    autocorrector
+    (my code for replacement) 
+
+content
+    Main idea
+        title + question + prompt + (question + title)
+        title + question +  text  + (question + title)
+    Detail
+        ngram
+        same as above?
+    Cohesion
+        the count of conjection
+        (sentence count)
+
+
+content と wording は 評価基準が違うので分けるべき
+
+数字に差がありすぎる場合は圧縮しないといけないものもある
