@@ -75,6 +75,8 @@ content
         the count of conjection
         (sentence count)
 
+    Summarised
+        length
 
 content と wording は 評価基準が違うので分けるべき
 
