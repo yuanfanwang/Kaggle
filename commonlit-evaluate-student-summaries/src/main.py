@@ -271,7 +271,7 @@ class ContentScoreRegressor:
         text = examples["text"]
         # TODO: can it be like this? [prompt_title, prompt_sum_text, prompt_question], text
         tokenized = self.tokenizer(prompt_title + prompt_sum_text + prompt_question, text,
-                                   padding="max_length",
+                                   padding=False,
                                    truncation=True,
                                    max_length=self.max_length)
         token = {
