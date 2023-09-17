@@ -14,13 +14,13 @@ Content Model
     Main idea               -> title 
 
 Wording Model
-    Voice
+    Voice       :  Was the summary written using objective language
         objective word      -> calculate the ration of the number of the objective word in summary to the number of the total words in summary.
                             -> calculate the ration of the number of the unique objective word in summary to the number of the total unique words.
-    Paraphrase
+    Paraphrase  :  Is the summary appropriately paraphrased
         paraphrase          -> word_to_vec
                             -> calculate the ratio of the number of the word in summary to the number of the word in the prompt
-    Lanuage
+    Lanuage     :  How well did the sumary use lexis and syntax
         lexis               -> count the number of unique words
         syntax              -> count the number of unique grammar
 

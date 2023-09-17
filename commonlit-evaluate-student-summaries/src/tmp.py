@@ -5,140 +5,76 @@ import logging
 import os
 import shutil
 import json
-from transformers import AutoModel
-from transformers import AutoTokenizer
-from transformers import AutoConfig
-from transformers import AutoModelForSequenceClassification
+import transformers
+from transformers import AutoModel, AutoTokenizer, AutoConfig, AutoModelForSequenceClassification
 from transformers import DataCollatorWithPadding
-from transformers import TrainingArguments
-from transformers import Trainer
-from transformers import DataCollator
+from datasets import Dataset,load_dataset, load_from_disk
+from transformers import TrainingArguments, Trainer
 from datasets import load_metric, disable_progress_bar
 from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import KFold, GroupkFold
+import torch
+from sklearn.model_selection import KFold, GroupKFold
 from tqdm import tqdm
-from collections import Counter
-import spacy
+
 import nltk
 from nltk.corpus import stopwords
 from collections import Counter
+import spacy
 import re
+#from autocorrect import Speller
 from spellchecker import SpellChecker
+import lightgbm as lgb
 
-warnings.simplefilter("ignore")
-logging.disable(logging.ERROR)
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-disable_progress_bar()
-tqdm.pandas()
+from pysummarization.nlpbase.auto_abstractor import AutoAbstractor
+from pysummarization.tokenizabledoc.simple_tokenizer import SimpleTokenizer
+from pysummarization.abstractabledoc.top_n_rank_abstractor import TopNRankAbstractor
 
-##################################################################################
+document = """
+Egyptian society was structured like a pyramid. At the top were the gods, such as Ra, Osiris, and Isis. Egyptians believed that the gods controlled the universe. Therefore, it was important to keep them happy. They could make the Nile overflow, cause famine, or even bring death. 
+The Egyptians also elevated some human beings to gods. Their leaders, called pharaohs, were believed to be gods in human form. They had absolute power over their subjects. After pharaohs died, huge stone pyramids were built as their tombs. Pharaohs were buried in chambers within the pyramids. 
+Because the people of Egypt believed that their pharaohs were gods, they entrusted their rulers with many responsibilities. Protection was at the top of the list. The pharaoh directed the army in case of a foreign threat or an internal conflict. All laws were enacted at the discretion of the pharaoh. Each farmer paid taxes in the form of grains, which were stored in the pharaoh’s warehouses. This grain was used to feed the people in the event of a famine. 
+The Chain of Command 
+No single person could manage all these duties without assistance. The pharaoh appointed a chief minister called a vizier as a supervisor. The vizier ensured that taxes were collected. 
+Working with the vizier were scribes who kept government records. These high-level employees had mastered a rare skill in ancient Egypt — they could read and write. 
+Noble Aims 
+Right below the pharaoh in status were powerful nobles and priests. Only nobles could hold government posts; in these positions they profited from tributes paid to the pharaoh. Priests were responsible for pleasing the gods. 
+Nobles enjoyed great status and also grew wealthy from donations to the gods. All Egyptians—from pharaohs to farmers—gave gifts to the gods. 
+Soldier On 
+Soldiers fought in wars or quelled domestic uprisings. During long periods of peace, soldiers also supervised the peasants, farmers, and slaves who were involved in building such structures as pyramids and palaces. 
+Skilled workers such as physicians and craftsmen/women made up the middle class. Craftsmen made and sold jewelry, pottery, papyrus products, tools, and other useful things. 
+Naturally, there were people needed to buy goods from artisans and traders. These were the merchants and storekeepers who sold these goods to the public. 
+The Bottom of the Heap 
+At the bottom of the social structure were slaves and farmers. Slavery became the fate of those captured as prisoners of war. In addition to being forced to work on building projects, slaves toiled at the discretion of the pharaoh or nobles. 
+Farmers tended the fields, raised animals, kept canals and reservoirs in good order, worked in the stone quarries, and built the royal monuments. Farmers paid taxes that could amount to as much as 60% of their yearly harvest—that’s a lot of hay! 
+Social mobility was not impossible. A small number of peasants and farmers moved up the economic ladder. Families saved money to send their sons to village schools to learn trades. These schools were run by priests or by artisans. Boys who learned to read and write could become scribes, then go on to gain employment in the government. It was possible for a boy born on a farm to work his way up into the higher ranks of the government. Bureaucracy proved lucrative.
+"""
 
-class CFG:
-    model_name="debertav3base"
-    learning_rate=1.5e-5
-    weight_decay=0.02
-    hidden_dropout_prob=0.005
-    attention_probs_dropout_prob=0.005
-    num_train_epochs=5
-    n_splits=4
-    batch_size=12
-    random_seed=42
-    save_steps=100
-    max_length=512
+# Object of automatic summarization.
+auto_abstractor = AutoAbstractor()
+# Set tokenizer.
+auto_abstractor.tokenizable_doc = SimpleTokenizer()
+# Set delimiter for making a list of sentence.
+auto_abstractor.delimiter_list = [".", ""]
+# Object of abstracting and filtering document.
+abstractable_doc = TopNRankAbstractor()
+# Summarize document.
+result_dict = auto_abstractor.summarize(document, abstractable_doc)
 
-##################################################################################
+# Output result.
+document2 = ""
+for sentence in result_dict["summarize_result"]:
+    print(sentence)
+    document2 += sentence + " "
 
-def seed_everything(seed: int):
-    import random, os
-    import numpy as np
-    random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    np.random.seed(seed)
+print("document2")
+print(document2)
 
-seed_everything(CFG.random_seed)
+result_dict2 = auto_abstractor.summarize(document2, abstractable_doc)
 
-##################################################################################
+document3 = ""
+for sentence in result_dict2["summarize_result"]:
+    document3 += sentence + " "
 
-DATA_DIR = "kaggle/input/commonlit-evaluate-student-summaries"
+print("document3")
+print(document3)
 
-prompts_train = pd.read_csv(DATA_DIR + "prompts_train.csv")
-prompts_test = pd.read_csv(DATA_DIR + "prompts_test.csv")
-summaries_train = pd.read_csv(DATA_DIR + "summaries_train.csv")
-summaries_test = pd.read_csv(DATA_DIR + "summaries_test.csv")
-sample_submission = pd.read_csv(DATA_DIR + "sample_submission.csv")
-
-##################################################################################
-
-class Tokenizer:
-    def __init__(self,
-                 model_name: str):
-        self.tokenizer = AutoTokenizer.from_pretrained(f"kaggle/input/{model_name}")
-        self.STOP_WARDS = set(stopwords.words('english'))
-        self.spacy_ner_model = spacy.load('en_core_web_sm')
-        self.speller = SpellChecker()
-    
-    def encode(self,
-               text: str):
-        return self.tokenizer.encode(text)
-
-
-class TextPreprocessor:
-    def __init__(self,
-                 tokenizer: Tokenizer):
-        self.tokenizer = tokenizer
-        self.STOP_WARDS = set(stopwords.words('english'))
-        self.spacy_ner_model = spacy.load('en_core_web_sm')
-        self.speller = SpellChecker()
-
-    def remove_unusual_symbol():
-        pass
-
-    def add_space_between_usual_symbol():
-        pass
-
-    def remove_stop_ward():
-        pass
-
-    def delete_blank_space():
-        pass
-
-    def correct_spell():
-        pass
-
-    def run(self,
-            prompts: pd.DataFrame,
-            summaries: pd.DataFrame) -> pd.DataFrame:
-       
-       prompts["prompt_length"]
-       input_df = summaries.merge(prompts, how="left", on="prompt_id")
-
-
-
-class FeatureExtractor:
-    def __init__(self,
-                 tokenizer: Tokenizer):
-        self.tokenizer = tokenizer
- 
-    def run(self):
-        pass
-
-
-class ContentFeatureExtractor(FeatureExtractor):
-    def __init__(self):
-        super().__init__()
-
-    def run(self,
-            prompts: pd.DataFrame,
-            summaries: pd.DataFrame,
-            ) -> pd.DataFrame:
-
-        prompts["prompt_legth"] = prompts["prompt_text"].apply(
-            lambda x: len(self.tokenizer.encode(x))
-        )
-
-        prompts["prompt_tokens"] = prompts["prompt_text"].apply(
-            lambda x: self.tokenizer.convert_ids_to_tokens(
-                self.tokenizer.encode(x)
-            )
-        )
