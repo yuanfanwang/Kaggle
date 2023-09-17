@@ -425,3 +425,8 @@ def main():
         )
 
 main()
+
+# padding
+# truncation
+# max_length
+# batch_size
