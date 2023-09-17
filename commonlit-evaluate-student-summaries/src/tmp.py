@@ -25,8 +25,6 @@ from collections import Counter
 import re
 from spellchecker import SpellChecker
 
-
-
 warnings.simplefilter("ignore")
 logging.disable(logging.ERROR)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -48,8 +46,6 @@ class CFG:
     random_seed=42
     save_steps=100
     max_length=512
-
-
 
 ##################################################################################
 
@@ -75,15 +71,22 @@ sample_submission = pd.read_csv(DATA_DIR + "sample_submission.csv")
 ##################################################################################
 
 class Tokenizer:
-    tokenizer = AutoTokenizer.from_pretrained(f"kaggle/input/{CFG.model_name}")
-    STOP_WARDS = set(stopwords.words('english'))
-    spacy_ner_model = spacy.load('en_core_web_sm')
-    speller = SpellChecker()
+    def __init__(self,
+                 model_name: str):
+        self.tokenizer = AutoTokenizer.from_pretrained(f"kaggle/input/{model_name}")
+        self.STOP_WARDS = set(stopwords.words('english'))
+        self.spacy_ner_model = spacy.load('en_core_web_sm')
+        self.speller = SpellChecker()
+    
+    def encode(self,
+               text: str):
+        return self.tokenizer.encode(text)
+
 
 class TextPreprocessor:
     def __init__(self,
-                 model_name: str):
-        self.tokenizer = AutoTokenizer.from_pretrained(f"kaggle/input/")
+                 tokenizer: Tokenizer):
+        self.tokenizer = tokenizer
         self.STOP_WARDS = set(stopwords.words('english'))
         self.spacy_ner_model = spacy.load('en_core_web_sm')
         self.speller = SpellChecker()
@@ -103,40 +106,39 @@ class TextPreprocessor:
     def correct_spell():
         pass
 
-    def run():
-        pass
+    def run(self,
+            prompts: pd.DataFrame,
+            summaries: pd.DataFrame) -> pd.DataFrame:
+       
+       prompts["prompt_length"]
+       input_df = summaries.merge(prompts, how="left", on="prompt_id")
+
 
 
 class FeatureExtractor:
-    def __init__(self):
-        pass
-    
+    def __init__(self,
+                 tokenizer: Tokenizer):
+        self.tokenizer = tokenizer
+ 
     def run(self):
         pass
 
 
 class ContentFeatureExtractor(FeatureExtractor):
     def __init__(self):
-        pass
+        super().__init__()
 
-    def extract(self,
-                prompts: pd.DataFrame,
-                summaries: pd.DataFrame,
-                ) -> pd.DataFrame:
-        
+    def run(self,
+            prompts: pd.DataFrame,
+            summaries: pd.DataFrame,
+            ) -> pd.DataFrame:
+
         prompts["prompt_legth"] = prompts["prompt_text"].apply(
             lambda x: len(self.tokenizer.encode(x))
         )
 
-        
-
-
-
-class WordingFeatureExtractor(FeatureExtractor):
-    def __init__(self):
-        pass
-
-    def extract(self, text: str):
-        pass
-
-
+        prompts["prompt_tokens"] = prompts["prompt_text"].apply(
+            lambda x: self.tokenizer.convert_ids_to_tokens(
+                self.tokenizer.encode(x)
+            )
+        )

@@ -5,7 +5,7 @@ import torch
 import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import mean_squared_error
+# from sklearn.model_selection import mean_squared_error
 
 
 from spellchecker import SpellChecker
@@ -26,6 +26,8 @@ allowed_symbol = r'[^a-zA-Z0-9\s\"\'\-\;\.\,]'
 for Text in summaries_train['text']:
     word_count_before_shaping = len(Text.split(' '))
 
+    print(Text)
+
     text = Text.lower()
     text = text.rstrip()
     text = text.replace('"', ' " ')
@@ -44,15 +46,18 @@ for Text in summaries_train['text']:
         corrected_word = spell.correction(word)
         if corrected_word == None:
             corrected_word = word
+            print("\nwrong\n")
+            print(word)
         corrected_text.append(corrected_word)
 
     corrected_sentence = ' '.join(corrected_text)
 
+    cnt += 1
+    if cnt > 5:
+        break
+
+    print(text)
+    print('\n')
+
     # added feature to the table
     # classifying this fucntion
-
-
-
-
-
-
