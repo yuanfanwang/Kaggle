@@ -48,12 +48,12 @@ class CFG:
     attention_probs_dropout_prob=0.005
     num_train_epochs=5
     n_splits=4
-    batch_size=10  # TODO: default: 12
+    batch_size=8  # TODO: default: 12
     random_seed=42
     save_steps=100
     max_length=512
 
-    
+
 def seed_everything(seed: int):
     import random, os
     import numpy as np
@@ -190,7 +190,7 @@ class ContentFeatureExtractor(FeatureExtractor):
     def __init__(self, tokenizer: Tokenizer):
         super().__init__(tokenizer)
         self.summarizer = Summarizer()
-    
+
 
     def __call__(self,
                  prompts: pd.DataFrame,
@@ -228,6 +228,28 @@ def compute_metrics(eval_pred):
     predictions, labels = eval_pred
     rmse = mean_squared_error(labels, predictions, squared=False)
     return {"rmse": rmse}
+
+def compute_mcrmse(eval_pred):
+    """
+    Calculates mean columnwise root mean squared error
+    https://www.kaggle.com/competitions/commonlit-evaluate-student-summaries/overview/evaluation
+    """
+    preds, labels = eval_pred
+
+    col_rmse = np.sqrt(np.mean((preds - labels) ** 2, axis=0))
+    mcrmse = np.mean(col_rmse)
+
+    return {
+        "content_rmse": col_rmse[0],
+        "wording_rmse": col_rmse[1],
+        "mcrmse": mcrmse,
+    }
+
+def compt_score(content_true, content_pred, wording_true, wording_pred):
+    content_score = mean_squared_error(content_true, content_pred)**(1/2)
+    wording_score = mean_squared_error(wording_true, wording_pred)**(1/2)
+    
+    return (content_score + wording_score)/2
 
 
 class ContentScoreRegressor:
@@ -340,6 +362,38 @@ class ContentScoreRegressor:
         model_content.save_pretrained(self.model_dir)
         self.tokenizer.save_pretrained(self.model_dir)
 
+    def predict(self,
+                test_df: pd.DataFrame,
+                fold: int):
+        """predict content score"""
+
+        input_test_df = test_df[self.input_cols + self.target_cols]
+
+        test_dataset = Dataset.from_pandas(input_test_df, preserve_index=False)
+        test_tokenized_datasets = test_dataset.map(self.tokenize_function, batched=False)
+
+        model_content = AutoModelForSequenceClassification.from_pretrained(f"{self.model_dir}")
+        model_content.eval()
+
+        model_fold_dir = os.path.join(self.model_dir, str(fold))
+
+        test_args = TrainingArguments(
+            output_dir=model_fold_dir,
+            do_train=False,
+            do_predict=True,
+            per_device_eval_batch_size=4,
+            dataloader_drop_last=False
+        )
+
+        infer_content = Trainer(
+            model=model_content,
+            tokenizer=self.tokenizer,
+            data_collator=self.data_collator,
+            args=test_args
+        )
+
+        preds = infer_content.predict(test_tokenized_datasets)[0]
+        return preds
 
 def train_by_fold(
         train_df: pd.DataFrame,
@@ -369,9 +423,9 @@ def train_by_fold(
         valid_data = train_df[train_df["fold"] == fold]
 
         if save_each_model == True:
-            model_dir =  f"{target}/{model_name}/fold_{fold}"
+            model_dir = f"{target}/{model_name}/fold_{fold}"
         else: 
-            model_dir =  f"{model_name}/fold_{fold}"
+            model_dir = f"{model_name}/fold_{fold}"
 
         csr = ContentScoreRegressor(
             model_name=model_name,
@@ -393,6 +447,79 @@ def train_by_fold(
             save_steps=save_steps,
         )
 
+def validate(
+        train_df: pd.DataFrame,
+        target: str,
+        save_each_model: bool,
+        model_name: str,
+        hidden_dropout_prob: float,
+        attention_probs_dropout_prob: float,
+        max_length: int) -> pd.DataFrame:
+    """predict of data"""
+    for fold in range(CFG.n_splits):
+        print(f"fold {fold}:")
+
+        valid_data = train_df[train_df["fold"] == fold]
+        
+        if save_each_model == True:
+            model_dir = f"{target}/{model_name}/fold_{fold}"
+        else:
+            model_dir = f"{model_name}/fold_{fold}"
+        
+        csr = ContentScoreRegressor(
+            model_name=model_name,
+            model_dir = model_dir,
+            hedden_dropout_prob=hidden_dropout_prob,
+            attention_probs_dropout_prob=attention_probs_dropout_prob,
+            max_length=max_length
+        )
+
+        pred = csr.predict(
+            test_df=valid_data,
+            fold=fold
+        )
+
+        train_df.loc[valid_data.index, f"{target}_pred"] = pred
+    
+    return train_df
+
+def predict(
+    test_df: pd.DataFrame,
+    target: str,
+    save_each_model: bool,
+    model_name: str,
+    hidden_dropout_prob: float,
+    attention_probs_dropout_prob: float,
+    max_length: int):
+    """predict of data"""
+
+    for fold in range(CFG.n_splits):
+        print(f"fold {fold}:")
+
+        if save_each_model == True:
+            model_dir = f"{target}/{model_name}/fold_{fold}"
+        else:
+            model_dir = f"{model_name}/fold_{fold}"
+        
+        csr = ContentScoreRegressor(
+            model_name=model_name,
+            target=target,
+            model_dir=model_dir,
+            hidden_dropout_prob=hidden_dropout_prob,
+            attention_probs_dropout_prob=attention_probs_dropout_prob,
+            max_length=max_length
+            )
+        
+        pred = csr.predict(
+            test_df=test_df,
+            fold=fold
+        )
+
+        test_df[f"{target}_pred_{fold}"] = pred
+    
+    test_df[f"{target}"] = test_df[[f"{target}_pred_{fold}" for fold in range(CFG.n_splits)]].mean(axis=1)
+
+    return test_df
 
 def main():
     tokenizer = Tokenizer(CFG.model_name)
@@ -402,6 +529,10 @@ def main():
     prompts = text_preprocessor(prompts_train, "prompt_text")
     summaries = text_preprocessor(summaries_train, "text")
     train = content_feature_extractor(prompts, summaries)
+
+    prompts = text_preprocessor(prompts_test, "prompt_text")
+    summaries = text_preprocessor(summaries_test, "text")
+    test = content_feature_extractor(prompts, summaries)
 
     gkf = GroupKFold(n_splits=CFG.n_splits)
     for i, (_, val_index) in enumerate(gkf.split(train, groups=train["prompt_id"])):
@@ -424,9 +555,36 @@ def main():
             max_length=CFG.max_length
         )
 
+        train = validate(
+            train,
+            target=target,
+            save_each_model=False,
+            model_name=CFG.model_name,
+            hidden_dropout_prob=CFG.hidden_dropout_prob,
+            attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
+            max_length=CFG.max_length
+        )
+
+        rmse = mean_squared_error(train[target], train[f"{target}_pred"], squared=False)
+        print(f"cv {target} rmse: {rmse}")
+
+        test = predict(
+            test,
+            target=target,
+            save_each_model=False,
+            model_name=CFG.model_name,
+            hidden_dropout_prob=CFG.hidden_dropout_prob,
+            attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
+            max_length=CFG.max_length
+        )
+
 main()
 
 # padding
 # truncation
 # max_length
 # batch_size
+# remove stop words
+
+# stop wards
+# decide summarize length and imprement the logic

@@ -416,13 +416,13 @@ class ContentScoreRegressor:
         model_content.save_pretrained(self.model_dir)
         self.tokenizer.save_pretrained(self.model_dir)
 
-        
+
     def predict(self, 
                 test_df: pd.DataFrame,
                 fold: int,
                ):
         """predict content score"""
-        
+
         sep = self.tokenizer.sep_token
         in_text = (
                     test_df["prompt_title"] + sep 
@@ -432,13 +432,13 @@ class ContentScoreRegressor:
         test_df[self.input_col] = in_text
 
         test_ = test_df[[self.input_col]]
-    
+
         test_dataset = Dataset.from_pandas(test_, preserve_index=False) 
         test_tokenized_dataset = test_dataset.map(self.tokenize_function_test, batched=False)
 
         model_content = AutoModelForSequenceClassification.from_pretrained(f"{self.model_dir}")
         model_content.eval()
-        
+
         # e.g. "bert/fold_0/"
         model_fold_dir = os.path.join(self.model_dir, str(fold)) 
 
@@ -484,10 +484,10 @@ def train_by_fold(
         shutil.rmtree(model_name)
     
     os.mkdir(model_name)
-        
+
     for fold in range(CFG.n_splits):
         print(f"fold {fold}:")
-        
+
         train_data = train_df[train_df["fold"] != fold]
         valid_data = train_df[train_df["fold"] == fold]
         
@@ -504,7 +504,7 @@ def train_by_fold(
             attention_probs_dropout_prob=attention_probs_dropout_prob,
             max_length=max_length,
            )
-        
+
         csr.train(
             fold=fold,
             train_df=train_data,
@@ -528,14 +528,14 @@ def validate(
     """predict oof data"""
     for fold in range(CFG.n_splits):
         print(f"fold {fold}:")
-        
+
         valid_data = train_df[train_df["fold"] == fold]
-        
+
         if save_each_model == True:
             model_dir =  f"{target}/{model_name}/fold_{fold}"
         else: 
             model_dir =  f"{model_name}/fold_{fold}"
-        
+
         csr = ContentScoreRegressor(
             model_name=model_name,
             target=target,
@@ -544,16 +544,16 @@ def validate(
             attention_probs_dropout_prob=attention_probs_dropout_prob,
             max_length=max_length,
            )
-        
+
         pred = csr.predict(
             test_df=valid_data, 
             fold=fold
         )
-        
+
         train_df.loc[valid_data.index, f"{target}_pred"] = pred
 
     return train_df
-    
+
 def predict(
     test_df: pd.DataFrame,
     target:str,
@@ -567,7 +567,7 @@ def predict(
 
     for fold in range(CFG.n_splits):
         print(f"fold {fold}:")
-        
+
         if save_each_model == True:
             model_dir =  f"{target}/{model_name}/fold_{fold}"
         else: 
@@ -581,14 +581,14 @@ def predict(
             attention_probs_dropout_prob=attention_probs_dropout_prob,
             max_length=max_length,
            )
-        
+
         pred = csr.predict(
             test_df=test_df, 
             fold=fold
         )
-        
+
         test_df[f"{target}_pred_{fold}"] = pred
-    
+
     test_df[f"{target}"] = test_df[[f"{target}_pred_{fold}" for fold in range(CFG.n_splits)]].mean(axis=1)
 
     return test_df
@@ -611,8 +611,7 @@ for target in ["content", "wording"]:
         save_steps=CFG.save_steps,
         max_length=CFG.max_length
     )
-    
-    
+
     train = validate(
         train,
         target=target,

@@ -61,8 +61,12 @@ abstractable_doc = TopNRankAbstractor()
 result_dict = auto_abstractor.summarize(document, abstractable_doc)
 
 # Output result.
-document2 = ""
+sum = ""
 for sentence in result_dict["summarize_result"]:
-    document2 += sentence.strip() + " "
+    print(sentence)
+    sum += sentence.strip() + " "
 
-print(document2.strip())
+for score in result_dict["scoring_data"]:
+    print(score)
+
+print(sum.strip())
