@@ -1,20 +1,12 @@
-import numpy as np
-import spacy
-import re
-import pytextrank
-import scipy
+from rake_nltk import Rake
+import nltk
+nltk.download('stopwords')
 
+# Uses stopwords for english from NLTK, and all puntuation characters by
+# default
+r = Rake()
 
-print(np.__version__)
-print(pytextrank.__version__)
-print(scipy.__version__)
-
-# !python3 -m spacy download en_core_web_sm
-# 
-# example text
 text = """
-Question.
-Summarize how the Third Wave developed over such a short period of time and why the experiment was ended.
 Background 
 The Third Wave experiment took place at Cubberley High School in Palo Alto, California during the first week of April 1967. History teacher Ron Jones, finding himself unable to explain to his students how people throughout history followed the crowd even when terrible things were happening, decided to demonstrate it to his students through an experiment. Jones announced that he was starting a movement aimed to eliminate democracy. Jones named the movement “The Third Wave” as a symbol of strength, referring to the mythical belief that the third in a series of waves is the strongest. One of the central points of this movement was that democracy’s main weakness is that it favors the individual over the whole community. Jones emphasized this main point of the movement when he created this catchy motto: “Strength through discipline, strength through community, strength through action, strength through pride.” 
 The Experiment 
@@ -24,24 +16,25 @@ By the fourth day of the experiment, the students became increasingly involved i
 At the end of the week, instead of a televised address of their leader, the students were presented with a blank channel. After a few minutes of waiting, Jones announced that they had been a part of an experiment to demonstrate how people willingly create a sense of superiority over others, and how this can lead people to justify doing horrible things in the name of the state’s honor.
 """
 
-nlp = spacy.load("en_core_web_sm")
+sentences = text.split(".")
+# Extraction given the text.
+r.extract_keywords_from_text(text)
 
-nlp.add_pipe("textrank")
-doc = nlp(text)
+# Extraction given the list of strings where each string is a sentence.
+r.extract_keywords_from_sentences(sentences)
 
-unique_words_set = set()
-prioritized_unique_words = ""
-for phrase in doc._.phrases: 
-    words = phrase.text.split(' ')
-    for word in words:
-        keyword = word.lower()
-        if keyword not in unique_words_set:
-            prioritized_unique_words += keyword + " , "
-            unique_words_set.add(keyword)
+# To get keyword phrases ranked highest to lowest.
+res = r.get_ranked_phrases()
+phrase_set = set()
 
-print(prioritized_unique_words)
-res = prioritized_unique_words.rstrip()
-res = re.sub(r' ,', ',', res)
-print(res)
-print((res.split(' '))[:0])
+res_text = ""
+for phrase in res:
+    phrase.lower()
+    if phrase not in phrase_set:
+        res_text += phrase + ", "
+        phrase_set.add(phrase)
 
+print(res_text)
+
+# To get keyword phrases ranked highest to lowest with scores.
+# print(r.get_ranked_phrases_with_scores())

@@ -1,20 +1,9 @@
-import numpy as np
-import spacy
-import re
-import pytextrank
-import scipy
+from transformers import AutoModel, AutoTokenizer, AutoConfig, AutoModelForSequenceClassification
+tokenizer = AutoTokenizer.from_pretrained("/kaggle/input/debertav3base")
 
 
-print(np.__version__)
-print(pytextrank.__version__)
-print(scipy.__version__)
 
-# !python3 -m spacy download en_core_web_sm
-# 
-# example text
-text = """
-Question.
-Summarize how the Third Wave developed over such a short period of time and why the experiment was ended.
+prompt_text = """
 Background 
 The Third Wave experiment took place at Cubberley High School in Palo Alto, California during the first week of April 1967. History teacher Ron Jones, finding himself unable to explain to his students how people throughout history followed the crowd even when terrible things were happening, decided to demonstrate it to his students through an experiment. Jones announced that he was starting a movement aimed to eliminate democracy. Jones named the movement “The Third Wave” as a symbol of strength, referring to the mythical belief that the third in a series of waves is the strongest. One of the central points of this movement was that democracy’s main weakness is that it favors the individual over the whole community. Jones emphasized this main point of the movement when he created this catchy motto: “Strength through discipline, strength through community, strength through action, strength through pride.” 
 The Experiment 
@@ -24,24 +13,19 @@ By the fourth day of the experiment, the students became increasingly involved i
 At the end of the week, instead of a televised address of their leader, the students were presented with a blank channel. After a few minutes of waiting, Jones announced that they had been a part of an experiment to demonstrate how people willingly create a sense of superiority over others, and how this can lead people to justify doing horrible things in the name of the state’s honor.
 """
 
-nlp = spacy.load("en_core_web_sm")
+text = """
+They would rub it up with soda to make the smell go away and it wouldnt be a bad smell. Some of the meat would be tossed on the floor where there was sawdust spit of the workers and they would make the meat all over again with the things in it.
+"""
 
-nlp.add_pipe("textrank")
-doc = nlp(text)
 
-unique_words_set = set()
-prioritized_unique_words = ""
-for phrase in doc._.phrases: 
-    words = phrase.text.split(' ')
-    for word in words:
-        keyword = word.lower()
-        if keyword not in unique_words_set:
-            prioritized_unique_words += keyword + " , "
-            unique_words_set.add(keyword)
+max_length = 100
+half_max_length = min(len(prompt_text.split(' ')), max_length // 2 - 2)
+prompt_text_ids = tokenizer.encode(prompt_text, add_special_tokens=False)
+trimed_prompt_text = tokenizer.decode(prompt_text_ids[:half_max_length])
 
-print(prioritized_unique_words)
-res = prioritized_unique_words.rstrip()
-res = re.sub(r' ,', ',', res)
-print(res)
-print((res.split(' '))[:0])
+tokenized = tokenizer(trimed_prompt_text, text,
+                      padding="max_length",
+                      truncation=True,
+                      max_length=max_length)
 
+tokens = tokenizer.decode(tokenized["input_ids"], skip_special_tokens=True)

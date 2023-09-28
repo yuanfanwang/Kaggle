@@ -26,10 +26,8 @@ import re
 from spellchecker import SpellChecker
 import lightgbm as lgb
 
-from pysummarization.nlpbase.auto_abstractor import AutoAbstractor
-from pysummarization.tokenizabledoc.simple_tokenizer import SimpleTokenizer
-from pysummarization.abstractabledoc.top_n_rank_abstractor import TopNRankAbstractor
-
+from rake_nltk import Rake
+import nltk
 
 torch.cuda.empty_cache()
 warnings.simplefilter("ignore")
@@ -39,19 +37,32 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 disable_progress_bar()
 tqdm.pandas()
 
+# BEST
+# model_name="debertav3base"
+# learning_rate=1.0e-6
+# weight_decay=0.02
+# hidden_dropout_prob=0.1
+# attention_probs_dropout_prob=0.1
+# num_train_epochs=5
+# n_splits=4
+# batch_size=20  # TODO: default: 12
+# random_seed=42
+# save_steps=100
+# max_length=128
+
 
 class CFG:
     model_name="debertav3base"
-    learning_rate=1.5e-5
+    learning_rate=1.0e-6
     weight_decay=0.02
-    hidden_dropout_prob=0.005
-    attention_probs_dropout_prob=0.005
+    hidden_dropout_prob=0.1  # default: 0.005
+    attention_probs_dropout_prob=0.1  # default: 0.005
     num_train_epochs=5
     n_splits=4
-    batch_size=8  # TODO: default: 12
+    batch_size=15  # TODO: default: 12
     random_seed=42
     save_steps=100
-    max_length=512
+    max_length=400
 
 
 def seed_everything(seed: int):
@@ -86,11 +97,17 @@ class Tokenizer:
         return self.tokenizer.encode(text)
 
     def convert_ids_to_tokens(self,
-                              text):
+                              text: str):
         return self.tokenizer.convert_ids_to_tokens(
             self.tokenizer.encode(text),
             skip_special_tokens=True
         )
+
+    def trimming(self, text: str) -> str:
+        text_ids = self.tokenizer.encode(text, add_special_tokens=False)
+        prompt_max_length = min(len(text_ids), 120)
+        trimed_text = self.tokenizer.decode(text_ids[:prompt_max_length])
+        return trimed_text
 
 
 class TextPreprocessor:
@@ -121,10 +138,12 @@ class TextPreprocessor:
         res = re.sub(r'\s{2,}', ' ', text)
         return res
 
-    def delete_space_at_the_end(self, text: str):
+    def delete_space_for_usual_symbol(self, text: str):
         res = text.rstrip()
         if not res.endswith(' .'):
             res += ' .'
+        # res = re.sub(r' ,', ',', res) 
+        # res = re.sub(r' .', '.', res) 
         return res
 
     def remove_stop_ward(self, text: str):
@@ -148,14 +167,12 @@ class TextPreprocessor:
                  col: str) -> pd.DataFrame:
         df[col] = df[col].progress_apply(
             lambda x: self.lower(x))
-        df[col] = df[col].progress_apply(
-            lambda x: self.add_space_between_usual_symbol(x))
+        #df[col] = df[col].progress_apply(lambda x: self.add_space_between_usual_symbol(x))
         df[col] = df[col].progress_apply(
             lambda x: self.remove_unusual_symbol(x))
         df[col] = df[col].progress_apply(
             lambda x: self.remove_blank(x))
-        df[col] = df[col].progress_apply(
-            lambda x: self.delete_space_at_the_end(x))
+        # df[col] = df[col].progress_apply(lambda x: self.delete_space_for_usual_symbol(x))
         # df[col] = df[col].apply(lambda x: self.remove_stop_ward(x))
         # df[col] = df[col].progress_apply(lambda x: self.correct_spell(x))
         return df
@@ -172,19 +189,23 @@ class FeatureExtractor:
 
 class Summarizer:
     def __init__(self):
-        self.auto_abstractor = AutoAbstractor()
-        self.auto_abstractor.tokenizable_doc = SimpleTokenizer()
-        self.auto_abstractor.delimiter_list = [".", "\n"]
-        self.abstractable_doc = TopNRankAbstractor()
+        nltk.download('stopwords')
+        self.rake = Rake()
 
-    # TODO result_dict has many keys
-    def __call__(self, text: str) -> Any:
-        result_dict = self.auto_abstractor.summarize(text, self.abstractable_doc)
-        res = ""
-        for sentence in result_dict["summarize_result"]:
-            res += sentence.strip() + ' '
-        return res.strip()
-
+    def __call__(self, text: str) -> str:
+        sentences = text.split(".")
+        self.rake.extract_keywords_from_text(text)
+        self.rake.extract_keywords_from_sentences(sentences)
+        ranked_phrases = self.rake.get_ranked_phrases()
+        unique_phrase_set = set()
+        ranked_phrases_text = ""
+        for phrase in ranked_phrases:
+            phrase.lower()
+            if phrase not in unique_phrase_set:
+                ranked_phrases_text += phrase + ", "
+                unique_phrase_set.add(phrase)
+        ranked_phrases_text = ranked_phrases_text.rstrip()
+        return ranked_phrases_text
 
 class ContentFeatureExtractor(FeatureExtractor):
     def __init__(self, tokenizer: Tokenizer):
@@ -205,8 +226,12 @@ class ContentFeatureExtractor(FeatureExtractor):
         #     lambda x: self.tokenizer.convert_ids_to_tokens(x)
         # )
 
-        prompts["prompt_sum_text"] = prompts["prompt_text"].progress_apply(
+        prompts["prioritized_prompt_words"] = prompts["prompt_text"].progress_apply(
             lambda x: self.summarizer(x)
+        )
+
+        prompts["trimed_and_prioritized_prompt_words"] = prompts["prioritized_prompt_words"].progress_apply(
+            lambda x: self.tokenizer.trimming(x)
         )
 
         # TODO: should be removed symbols
@@ -260,8 +285,8 @@ class ContentScoreRegressor:
                  hidden_dropout_prob: float,
                  attention_probs_dropout_prob: float,
                  max_length: int):
- 
-        self.input_cols = ["prompt_question", "prompt_title", "prompt_sum_text", "text"]
+
+        self.input_cols = ["trimed_and_prioritized_prompt_words", "text"]
 
         self.target = target
         self.target_cols = [target]
@@ -273,7 +298,7 @@ class ContentScoreRegressor:
         self.tokenizer = AutoTokenizer.from_pretrained(f"/kaggle/input/{model_name}")
         self.model_config = AutoConfig.from_pretrained(f"/kaggle/input/{model_name}")
         self.model_config.update({
-            "hedden_dropout_prob": hidden_dropout_prob,
+            "hidden_dropout_prob": hidden_dropout_prob,
             "attention_probs_dropout_prob": attention_probs_dropout_prob,
             "num_labels": 1,
             "problem_type": "regression"
@@ -284,23 +309,21 @@ class ContentScoreRegressor:
         self.data_collator = DataCollatorWithPadding(
             tokenizer=self.tokenizer
         )
-
+    
     def tokenize_function(self, examples: pd.DataFrame):
         labels = [examples[self.target]]
-        prompt_title = examples["prompt_title"]
-        prompt_sum_text = examples["prompt_sum_text"]
-        prompt_question = examples["prompt_question"]
+        trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
         text = examples["text"]
-        # TODO: can it be like this? [prompt_title, prompt_sum_text, prompt_question], text
-        tokenized = self.tokenizer(prompt_title + prompt_sum_text + prompt_question, text,
-                                   padding=False,
+
+        # TODO: add prompt_question for third feature of the token. [0,0,0,1,1,1,1,1,2,2,2,2,2] 
+        tokenized = self.tokenizer(trimed_and_prioritized_text, text,
+                                   padding="max_length",
                                    truncation=True,
                                    max_length=self.max_length)
         token = {
             **tokenized,
             "labels": labels
         }
-        # print(token)
         return token
 
     def train(self,
@@ -469,7 +492,8 @@ def validate(
         csr = ContentScoreRegressor(
             model_name=model_name,
             model_dir = model_dir,
-            hedden_dropout_prob=hidden_dropout_prob,
+            target=target,
+            hidden_dropout_prob=hidden_dropout_prob,
             attention_probs_dropout_prob=attention_probs_dropout_prob,
             max_length=max_length
         )
@@ -568,6 +592,20 @@ def main():
         rmse = mean_squared_error(train[target], train[f"{target}_pred"], squared=False)
         print(f"cv {target} rmse: {rmse}")
 
+        save_score = True
+        if save_score:
+            print(train[target])
+            print(train[f"{target}_pred"])
+            save_directory = f"{CFG.model_name}/{target}_pred_score"
+
+            if os.path.exists(save_directory):
+                shutil.rmtree(save_directory)
+            os.mkdir(save_directory)
+
+            csv_file_name = 'score.csv'
+            csv_file_path = os.path.join(save_directory, csv_file_name)
+            train[f"{target}_pred"].to_csv(csv_file_path, index=False)
+
         test = predict(
             test,
             target=target,
@@ -580,11 +618,10 @@ def main():
 
 main()
 
-# padding
-# truncation
-# max_length
+
 # batch_size
 # remove stop words
+
 
 # stop wards
 # decide summarize length and imprement the logic
