@@ -16,25 +16,14 @@ By the fourth day of the experiment, the students became increasingly involved i
 At the end of the week, instead of a televised address of their leader, the students were presented with a blank channel. After a few minutes of waiting, Jones announced that they had been a part of an experiment to demonstrate how people willingly create a sense of superiority over others, and how this can lead people to justify doing horrible things in the name of the state’s honor.
 """
 
-sentences = text.split(".")
 # Extraction given the text.
 r.extract_keywords_from_text(text)
 
 # Extraction given the list of strings where each string is a sentence.
-r.extract_keywords_from_sentences(sentences)
+# r.extract_keywords_from_sentences(<list of sentences>)
 
 # To get keyword phrases ranked highest to lowest.
-res = r.get_ranked_phrases()
-phrase_set = set()
-
-res_text = ""
-for phrase in res:
-    phrase.lower()
-    if phrase not in phrase_set:
-        res_text += phrase + ", "
-        phrase_set.add(phrase)
-
-print(res_text)
+print(r.get_ranked_phrases())
 
 # To get keyword phrases ranked highest to lowest with scores.
-# print(r.get_ranked_phrases_with_scores())
+print(r.get_ranked_phrases_with_scores())

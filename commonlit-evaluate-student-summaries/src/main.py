@@ -19,15 +19,18 @@ from tqdm import tqdm
 
 import nltk
 from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk import pos_tag 
 from collections import Counter
-import spacy
+# import spacy
 import re
 #from autocorrect import Speller
 from spellchecker import SpellChecker
+from autocorrect import Speller
 import lightgbm as lgb
 
 from rake_nltk import Rake
-import nltk
+
 
 torch.cuda.empty_cache()
 warnings.simplefilter("ignore")
@@ -49,7 +52,6 @@ tqdm.pandas()
 # random_seed=42
 # save_steps=100
 # max_length=128
-
 
 class CFG:
     model_name="debertav3base"
@@ -89,8 +91,7 @@ class Tokenizer:
                  model_name: str):
         self.tokenizer = AutoTokenizer.from_pretrained(f"/kaggle/input/{model_name}")
         self.STOP_WARDS = set(stopwords.words('english'))
-        self.spacy_ner_model = spacy.load('en_core_web_sm')
-        self.speller = SpellChecker()
+        # self.spacy_ner_model = spacy.load('en_core_web_sm')
 
     def encode(self,
                text: str):
@@ -108,73 +109,35 @@ class Tokenizer:
         prompt_max_length = min(len(text_ids), 120)
         trimed_text = self.tokenizer.decode(text_ids[:prompt_max_length])
         return trimed_text
-
-
+    
 class TextPreprocessor:
     def __init__(self,
                  tokenizer: Tokenizer):
         self.tokenizer = tokenizer
         self.STOP_WARDS = set(stopwords.words('english'))
-        self.spacy_ner_model = spacy.load('en_core_web_sm')
-        self.speller = SpellChecker()
-
-    def lower(self, text: str):
-        res = text.lower()
-        return res 
-
-    def add_space_between_usual_symbol(self, text: str):
-        res = text.replace('"', ' " ')
-        res = res.replace(';', ' ; ')
-        res = res.replace('.', ' . ')
-        res = res.replace(',', ' , ')
-        return res
-
-    def remove_unusual_symbol(self, text: str):
-        not_allowed_symbol = r'[^a-zA-Z0-9\s\"\'\-\;\.\,]'
-        res = re.sub(not_allowed_symbol, ' ', text)
-        return res
-
-    def remove_blank(self, text: str):
-        res = re.sub(r'\s{2,}', ' ', text)
-        return res
-
-    def delete_space_for_usual_symbol(self, text: str):
-        res = text.rstrip()
-        if not res.endswith(' .'):
-            res += ' .'
-        # res = re.sub(r' ,', ',', res) 
-        # res = re.sub(r' .', '.', res) 
-        return res
-
-    def remove_stop_ward(self, text: str):
-        pass
-
-    def correct_spell(self, text: str):
-        words = text.split(' ')
-        #corrected_words = []
-        #for word in words:
-        #    corrected_word = self.speller.correction(word)
-        #    if corrected_word == None:
-        #        corrected_word = word
-        #    corrected_words.append(corrected_word)
-
-        res = ' '.join(words)
-        return res
+        # self.spacy_ner_model = spacy.load('en_core_web_sm')
+    
+    def preprocess(self, text: str):
+        text = text.lower()
+        text = text.replace('.', ' . ')
+        text = text.replace(',', ' , ')
+        not_allowed_symbol = r'[^a-zA-Z0-9\s\'\-\.\,]'
+        text = re.sub(not_allowed_symbol, ' ', text)
+        text = re.sub(r'\s{2,}', ' ', text)
+        text = text.replace(' . ', '. ')
+        text = text.replace(' , ', '. ')
+        text = text.rstrip()
+        if text[-1] != '.':
+            text += '.'
+        return text
     
     # TODO: prompt_question prompt_title
     def __call__(self,
                  df: pd.DataFrame,
                  col: str) -> pd.DataFrame:
         df[col] = df[col].progress_apply(
-            lambda x: self.lower(x))
-        #df[col] = df[col].progress_apply(lambda x: self.add_space_between_usual_symbol(x))
-        df[col] = df[col].progress_apply(
-            lambda x: self.remove_unusual_symbol(x))
-        df[col] = df[col].progress_apply(
-            lambda x: self.remove_blank(x))
-        # df[col] = df[col].progress_apply(lambda x: self.delete_space_for_usual_symbol(x))
-        # df[col] = df[col].apply(lambda x: self.remove_stop_ward(x))
-        # df[col] = df[col].progress_apply(lambda x: self.correct_spell(x))
+            lambda x: self.preprocess(x)
+        )
         return df
 
 
@@ -207,46 +170,217 @@ class Summarizer:
         ranked_phrases_text = ranked_phrases_text.rstrip()
         return ranked_phrases_text
 
+
 class ContentFeatureExtractor(FeatureExtractor):
     def __init__(self, tokenizer: Tokenizer):
         super().__init__(tokenizer)
-        self.summarizer = Summarizer()
+        self.summarizer = Summarizer() 
+        self.speller = Speller()
+        self.spellchecker = SpellChecker()
+        self.stop_words = set(stopwords.words('english'))
+        self.duplicate_loss_weight = 2
 
+    def sentence_ratio(self, text: str):
+        text_length = len(text.split())
+        sentence_count = text.count('.')
+        if text_length == 0:
+            return 0
+        else:
+            return sentence_count / text_length
 
+    def spell_miss_ratio(self, text: str):
+        text_length = len(text.split())
+        filtered_text = text.replace('.', '')
+        filtered_text = filtered_text.replace(',', '')
+        wordlist = filtered_text.split()
+        miss_count = len(list(self.spellchecker.unknown(wordlist)))
+        if text_length == 0:
+            return 0
+        else:
+            return miss_count / text_length
+    
+    def add_spelling_dictionary(self, text: str):
+        """dictionary update for pyspell checker and autocorrect"""
+        filtered_text = text.replace('.', '')
+        filtered_text = filtered_text.replace(',', '')
+        wordlist = filtered_text.split()
+        self.spellchecker.word_frequency.load_words(wordlist)
+        self.speller.nlp_data.update({token:1000 for token in wordlist})
+
+    def corrected_text(self, text: str):
+        modified_text = text.replace('.', '')
+        modified_text = modified_text.replace(',', '')
+        modified_text = self.speller(modified_text)
+        return modified_text
+
+    # TODAY: culculation time
+    def word_overlap_ratio(self, row):
+        def check_is_stop_word(word):
+            return word in self.stop_words
+        prompt_text = row["prompt_text"]
+        prompt_text = prompt_text.replace('.', '')
+        prompt_text = prompt_text.replace(',', '')
+        prompt_words = prompt_text.split()
+
+        summaries_text = row["corrected_text"]
+        summaries_text = summaries_text.replace('.', '')
+        summaries_text = summaries_text.replace(',', '')
+        summary_words = summaries_text.sprit()
+
+        text_length = len(summary_words.split())
+        if self.stop_words:
+            prompt_words = list(filter(check_is_stop_word, prompt_words))
+            summary_words = list(filter(check_is_stop_word, summary_words))
+        overlap_word_length = len(set(prompt_words).intersection(set(summary_words)))
+        if text_length == 0:
+            return 0
+        else:
+            return overlap_word_length / text_length
+
+    # TODAY: calculation time
+    def ngrams(self, token, n):
+        ngrams = zip(*[token[i:] for i in range(n)])
+        return [" ".join(ngram) for ngram in ngrams]
+    
+    def ngram_co_occurrence(self, row, n: int) -> int:
+        prompt_text = row["prompt_text"]
+        prompt_text = prompt_text.replace('.', '')
+        prompt_text = prompt_text.replace(',', '')
+        prompt_words = prompt_text.split()
+
+        summaries_text = row["corrected_text"]
+        summaries_text = summaries_text.replace('.', '')
+        summaries_text = summaries_text.replace(',', '')
+        summary_words = summaries_text.sprit()
+
+        prompt_ngrams = set(self.ngrams(prompt_words, n))
+        summary_ngrams = set(self.ngrams(summary_words, n))
+        common_ngrams = prompt_ngrams.intersection(summary_ngrams)
+        if len(summary_words) - n + 1 < 0:
+            return 0
+        else:
+            return len(common_ngrams) / (len(summary_words) - n + 1)
+
+    def content_feature(self,
+                        prompt_df: pd.DataFrame,
+                        input_df: pd.DataFrame):
+
+        def token_dict(text: str) -> dict:
+            words = text.replace('.', '')
+            words = words.replace(',', '')
+            tokens = word_tokenize(words)        
+            tokens = pos_tag(tokens)
+            filtered_tokens = dict()
+            for word, tag in tokens:
+                if word in self.stop_words:
+                    continue
+                token = (word, tag)
+                if not token in filtered_tokens:
+                    filtered_tokens[token] = 1
+                else:
+                    filtered_tokens[token] *= self.duplicate_loss_weight
+            return filtered_tokens
+
+        prompt_dict_list = dict()
+        for _, row in prompt_df.iterrows():
+            prompt_dict_list[row["prompt_id"]] = token_dict(row["prompt_text"])
+
+        for i, row in input_df.iterrows():
+            summaries_dict = token_dict(row["corrected_text"])
+            prompt_id = row["prompt_id"]
+            duplicate_loss = 0
+            jj_count = 0
+            nn_count = 0
+            rb_count = 0
+
+            for key, val in summaries_dict.items():
+                word, tag = key
+                if val == 1:
+                    continue
+                if ((not "JJ" in tag) and
+                    (not "RB" in tag)):
+                    continue
+
+                duplicate_loss += val
+
+            prompt_dict = prompt_dict_list[prompt_id]
+            unique_words_in_summaries = list(set(summaries_dict.keys()) - set(prompt_dict.keys()))
+            for word, tag in unique_words_in_summaries:
+                if "JJ" in tag:
+                    jj_count += 1
+                if "NN" in tag:
+                    nn_count += 1
+                if "RB" in tag:
+                    rb_count += 1
+            # [wording] 2
+            input_df.at[i, "jj_count"] = jj_count
+            # [wording] 3
+            input_df.at[i, "nn_count"] = nn_count
+            # [wording] 4
+            input_df.at[i, "rb_count"] = rb_count
+            # [wording] 5
+            input_df.at[i, "duplicate_loss"] = duplicate_loss
+    
     def __call__(self,
                  prompts: pd.DataFrame,
                  summaries: pd.DataFrame) -> pd.DataFrame:
-
-        # TODO: should be removed symbols
-        prompts["prompt_legth"] = prompts["prompt_text"].progress_apply(
-            lambda x: len(self.tokenizer.encode(x))
+        
+        prompts["prompt_text"].apply(
+            lambda x: self.add_spelling_dictionary(x)
         )
 
-        # prompts["prompt_tokens"] = prompts["prompt_text"].progress_apply(
-        #     lambda x: self.tokenizer.convert_ids_to_tokens(x)
-        # )
+        prompts["prompt_legth"] = prompts["prompt_text"].progress_apply(
+            lambda x: len(x.split())
+        )
 
         prompts["prioritized_prompt_words"] = prompts["prompt_text"].progress_apply(
             lambda x: self.summarizer(x)
         )
 
+        # [devert]
         prompts["trimed_and_prioritized_prompt_words"] = prompts["prioritized_prompt_words"].progress_apply(
             lambda x: self.tokenizer.trimming(x)
         )
 
-        # TODO: should be removed symbols
+        # [devert]
+        summaries["corrected_text"] = summaries["text"].progress_apply(
+            lambda x: self.corrected_text(x)
+        )
+        print("summaries corrected text head: ", summaries["corrected_text"].head())
+
         summaries["summary_length"] = summaries["text"].progress_apply(
-            lambda x: len(self.tokenizer.encode(x))
+            lambda x: len(x.split())
         )
 
-        # summaries["summary_tokens"] = summaries["text"].progress_apply(
-        #     lambda x: self.tokenizer.convert_ids_to_tokens(x)
-        # )
+        # [content] 1
+        # [wording] 1
+        summaries["spell_miss_ratio"] = summaries["text"].progress_apply(
+            lambda x: self.spell_miss_ratio(x)
+        )
+
+        # [content] 2
+        summaries["sentence_ratio"] = summaries["text"].progress_apply(
+            lambda x: self.sentence_ratio(x)
+        )
 
         input_df = summaries.merge(prompts, how="left", on="prompt_id")
 
+        # [content] 3
+        input_df['length_ratio'] = input_df['summary_length'] / input_df['prompt_length']
+
+        # [content] 4 
+        input_df['word_overlap_ratio'] = input_df.progress_apply(self.word_overlap_ratio, axis=1)
+
+        # [content] 5 
+        input_df['bigram_overlap_ratio'] = input_df.progress_apply(self.ngram_co_occurrence,args=(2,), axis=1)
+
+        # [content] 6 
+        input_df['trigram_overlap_ratio'] = input_df.progress_apply(self.ngram_co_occurrence,args=(3,), axis=1)
+
+        # [wording] 2 ~ 5
+        self.content_feature(prompts, input_df)  # sould be executed after creating "corrected_text"
+
         return input_df
-        # return input_df.drop(columns=["summary_tokens", "prompt_tokens"])
 
 
 def compute_metrics(eval_pred):
@@ -286,7 +420,7 @@ class ContentScoreRegressor:
                  attention_probs_dropout_prob: float,
                  max_length: int):
 
-        self.input_cols = ["trimed_and_prioritized_prompt_words", "text"]
+        self.input_cols = ["trimed_and_prioritized_prompt_words", "corrected_text"]
 
         self.target = target
         self.target_cols = [target]
@@ -313,7 +447,7 @@ class ContentScoreRegressor:
     def tokenize_function(self, examples: pd.DataFrame):
         labels = [examples[self.target]]
         trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
-        text = examples["text"]
+        text = examples["corrected_text"]
 
         # TODO: add prompt_question for third feature of the token. [0,0,0,1,1,1,1,1,2,2,2,2,2] 
         tokenized = self.tokenizer(trimed_and_prioritized_text, text,
@@ -325,6 +459,17 @@ class ContentScoreRegressor:
             "labels": labels
         }
         return token
+    
+    def tokenize_function_test(self, examples: pd.DataFrame):
+        trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
+        text = examples["corrected_text"]
+
+        # TODO: add prompt_question for third feature of the token. [0,0,0,1,1,1,1,1,2,2,2,2,2] 
+        tokenized = self.tokenizer(trimed_and_prioritized_text, text,
+                                   padding="max_length",
+                                   truncation=True,
+                                   max_length=self.max_length)       
+        return tokenized
 
     def train(self,
               fold: int,
@@ -393,7 +538,7 @@ class ContentScoreRegressor:
         input_test_df = test_df[self.input_cols + self.target_cols]
 
         test_dataset = Dataset.from_pandas(input_test_df, preserve_index=False)
-        test_tokenized_datasets = test_dataset.map(self.tokenize_function, batched=False)
+        test_tokenized_datasets = test_dataset.map(self.tokenize_function_test, batched=False)
 
         model_content = AutoModelForSequenceClassification.from_pretrained(f"{self.model_dir}")
         model_content.eval()
@@ -546,11 +691,14 @@ def predict(
     return test_df
 
 def main():
+
+    ## Preprocess
     tokenizer = Tokenizer(CFG.model_name)
     text_preprocessor = TextPreprocessor(tokenizer)
     content_feature_extractor = ContentFeatureExtractor(tokenizer)
 
     prompts = text_preprocessor(prompts_train, "prompt_text")
+    prompts = text_preprocessor(prompts, "prompt_title")
     summaries = text_preprocessor(summaries_train, "text")
     train = content_feature_extractor(prompts, summaries)
 
@@ -562,7 +710,9 @@ def main():
     for i, (_, val_index) in enumerate(gkf.split(train, groups=train["prompt_id"])):
         train.loc[val_index, "fold"] = i
 
-    for target in ["content"]:
+    ## devert process
+    targets = ["content", "wording"]
+    for target in targets:
         train_by_fold(
             train,
             model_name=CFG.model_name,
@@ -592,6 +742,7 @@ def main():
         rmse = mean_squared_error(train[target], train[f"{target}_pred"], squared=False)
         print(f"cv {target} rmse: {rmse}")
 
+        """
         save_score = True
         if save_score:
             print(train[target])
@@ -605,6 +756,7 @@ def main():
             csv_file_name = 'score.csv'
             csv_file_path = os.path.join(save_directory, csv_file_name)
             train[f"{target}_pred"].to_csv(csv_file_path, index=False)
+        """
 
         test = predict(
             test,
@@ -616,12 +768,134 @@ def main():
             max_length=CFG.max_length
         )
 
+    ## lgbm preprocess
+    common_drop_columns = ["fold",
+                           "student_id",
+                           "prompt_id",
+                           "text",
+                           "fixed_summary_text",
+                           "prompt_question",
+                           "prompt_title", 
+                           "prompt_text",  # original
+                           "prompt_length",
+                           "prioritized_prompt_words",
+                           "trimed_and_prioritized_prompt_words",
+                           "corrected_text",
+                           "summary_length"] + targets
+    
+    # TODO: fold should be added?
+    additional_common_drop_columns = [f"content_pred_{i}" for i in range(CFG.n_splits)] + \
+                                     [f"wording_pred_{i}" for i in range(CFG.n_splits)]
+
+    content_drop_columns = ["jj_count",
+                            "nn_count",
+                            "rb_count",
+                            "dupulicate_loss"]
+
+    wording_drop_columns = ["sentence_ratio",
+                            "length_ratio",
+                            "word_overlap_ratio",
+                            "bigram_overlap_ratio",
+                            "trigram_overlap_ratio"]
+
+    lgbm_feature_drop_dict = {
+        "content": common_drop_columns + content_drop_columns,
+        "wording": common_drop_columns + wording_drop_columns,
+    }
+
+
+    model_dict = {}
+    for target in targets:
+        models = []
+
+        for fold in range(CFG.n_splits):
+        
+            X_train_cv = train[train["fold"] != fold].drop(columns=lgbm_feature_drop_dict[target])
+            print("x_train_cv head: ", X_train_cv.head())
+            y_train_cv = train[train["fold"] != fold][target]
+            print("y_train_cv head: ", y_train_cv.head())
+
+            X_eval_cv = train[train["fold"] == fold].drop(columns=lgbm_feature_drop_dict[target])
+            y_eval_cv = train[train["fold"] == fold][target]
+
+            dtrain = lgb.Dataset(X_train_cv, label=y_train_cv)
+            dval = lgb.Dataset(X_eval_cv, label=y_eval_cv)
+
+            params = {
+                      'boosting_type': 'gbdt',
+                      'random_state': 42,
+                      'objective': 'regression',
+                      'metric': 'rmse',
+                      'learning_rate': 0.05,
+                      }
+
+            evaluation_results = {}
+            model = lgb.train(params,
+                              num_boost_round=10000,
+                                #categorical_feature = categorical_features,
+                              valid_names=['train', 'valid'],
+                              train_set=dtrain,
+                              valid_sets=dval,
+                              callbacks=[
+                                  lgb.early_stopping(stopping_rounds=30, verbose=True),
+                                   lgb.log_evaluation(100),
+                                  lgb.callback.record_evaluation(evaluation_results)
+                                ],
+                              )
+            models.append(model)
+
+        model_dict[target] = models
+    
+    
+    ## cv after lgbm
+    rmses = []
+    for target in targets:
+        models = model_dict[target]
+
+        preds = []
+        trues = []
+
+        for fold, model in enumerate(models):
+            X_eval_cv = train[train["fold"] == fold].drop(columns=lgbm_feature_drop_dict[target])
+            y_eval_cv = train[train["fold"] == fold][target]
+
+            pred = model.predict(X_eval_cv)
+
+            trues.extend(y_eval_cv)
+            preds.extend(pred)
+
+        rmse = np.sqrt(mean_squared_error(trues, preds))
+        print(f"{target}_rmse : {rmse}")
+        rmses = rmses + [rmse]
+
+    print(f"mcrmse : {sum(rmses) / len(rmses)}")
+
+    ## predict  
+    pred_dict = {}
+    for target in targets:
+        model = model_dict[target]
+        preds = []
+
+        for fold, model in enumerate(models):
+            drop_columns = lgbm_feature_drop_dict[target] + additional_common_drop_columns
+            X_eval_cv = test.drop(columns=drop_columns) 
+            print("predict: ", X_eval_cv)
+
+            pred = model.predict(X_eval_cv)
+            preds.append(pred)
+        
+        pred_dict[target] = preds
+    
+
+    for target in targets:
+        preds = pred_dict[target]
+        for i, pred in enumerate(preds):
+            test[f"{target}_pred_{i}"] = pred
+
+        test[target] = test[[f"{target}_pred_{fold}" for fold in range(CFG.n_splits)]].mean(axis=1)
+
+    print(test)
+    print(sample_submission)
+    test[["student_id", "content", "wording"]].to_csv("submission.csv", index=False)
+
 main()
-
-
-# batch_size
-# remove stop words
-
-
-# stop wards
-# decide summarize length and imprement the logic

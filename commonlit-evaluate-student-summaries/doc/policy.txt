@@ -11,10 +11,8 @@ Content Model
         2. Scores of differences between sentences and sentences
         3. sentence count
 
-    Main idea               -> title 
-
 Wording Model
-    Voice       :  Was the summary written using objective language
+    Voice       :  Was the summary written using objetive language
         objective word      -> calculate the ration of the number of the objective word in summary to the number of the total words in summary.
                             -> calculate the ration of the number of the unique objective word in summary to the number of the total unique words.
     Paraphrase  :  Is the summary appropriately paraphrased
@@ -84,6 +82,29 @@ content と wording は 評価基準が違うので分けるべき
 数字に差がありすぎる場合は圧縮しないといけないものもある
 
 
-文章の最初の数文字と最後の数文字を入れる？　sumy
-
 devertav3 は tokenやidになった元
+
+
+wording に　文字数は関係ない
+objective and subjective word  客観的表現の抽出方法
+豊富な文法表現の抽出方法
+
+
+Preprocess
+- nltk tokenized
+- remove symbol without '.' and ','
+- adding prompt title to text
+
+LGBM
+content 
+- sentence ratio
+- length ratio original (not tokenized)
+- grammer and spell check
+- word overlap (test with and without, first without)
+- ngram overlap (test with and without, first without)
+
+wording
+- NN, JJ, RB
+- overlaped NN, JJ and RB (nega)
+- Grammer and spell check
+
