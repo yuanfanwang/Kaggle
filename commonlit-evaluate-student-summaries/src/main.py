@@ -24,7 +24,7 @@ from nltk import pos_tag
 from collections import Counter
 # import spacy
 import re
-#from autocorrect import Speller
+from autocorrect import Speller
 from spellchecker import SpellChecker
 from autocorrect import Speller
 import lightgbm as lgb
@@ -225,9 +225,9 @@ class ContentFeatureExtractor(FeatureExtractor):
         summaries_text = row["corrected_text"]
         summaries_text = summaries_text.replace('.', '')
         summaries_text = summaries_text.replace(',', '')
-        summary_words = summaries_text.sprit()
+        summary_words = summaries_text.split()
 
-        text_length = len(summary_words.split())
+        text_length = len(summary_words)
         if self.stop_words:
             prompt_words = list(filter(check_is_stop_word, prompt_words))
             summary_words = list(filter(check_is_stop_word, summary_words))
@@ -251,7 +251,7 @@ class ContentFeatureExtractor(FeatureExtractor):
         summaries_text = row["corrected_text"]
         summaries_text = summaries_text.replace('.', '')
         summaries_text = summaries_text.replace(',', '')
-        summary_words = summaries_text.sprit()
+        summary_words = summaries_text.split()
 
         prompt_ngrams = set(self.ngrams(prompt_words, n))
         summary_ngrams = set(self.ngrams(summary_words, n))
@@ -329,7 +329,7 @@ class ContentFeatureExtractor(FeatureExtractor):
             lambda x: self.add_spelling_dictionary(x)
         )
 
-        prompts["prompt_legth"] = prompts["prompt_text"].progress_apply(
+        prompts["prompt_length"] = prompts["prompt_text"].progress_apply(
             lambda x: len(x.split())
         )
 
@@ -782,7 +782,7 @@ def main():
                            "trimed_and_prioritized_prompt_words",
                            "corrected_text",
                            "summary_length"] + targets
-    
+
     # TODO: fold should be added?
     additional_common_drop_columns = [f"content_pred_{i}" for i in range(CFG.n_splits)] + \
                                      [f"wording_pred_{i}" for i in range(CFG.n_splits)]
@@ -802,7 +802,6 @@ def main():
         "content": common_drop_columns + content_drop_columns,
         "wording": common_drop_columns + wording_drop_columns,
     }
-
 
     model_dict = {}
     for target in targets:
@@ -845,7 +844,7 @@ def main():
             models.append(model)
 
         model_dict[target] = models
-    
+
     
     ## cv after lgbm
     rmses = []
