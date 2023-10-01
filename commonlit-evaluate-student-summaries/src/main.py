@@ -63,22 +63,12 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 disable_progress_bar()
 tqdm.pandas()
 
-# BEST
-# model_name="debertav3base"
-# learning_rate=1.0e-6
-# weight_decay=0.02
-# hidden_dropout_prob=0.1
-# attention_probs_dropout_prob=0.1
-# num_train_epochs=5
-# n_splits=4
-# batch_size=20  # TODO: default: 12
-# random_seed=42
-# save_steps=100
-# max_length=128
-
 class CFG:
     model_name="debertav3base"
-    learning_rate=7.0e-7
+    learning_rate= {
+        "content": 7.0e-7,
+        "wording": 5.0e-7
+    }
     weight_decay=0.02
     hidden_dropout_prob=0.1  # default: 0.005
     attention_probs_dropout_prob=0.1  # default: 0.005
@@ -736,7 +726,7 @@ def main():
             model_name=CFG.model_name,
             save_each_model=True,
             target=target,
-            learning_rate=CFG.learning_rate,
+            learning_rate=CFG.learning_rate[target],
             hidden_dropout_prob=CFG.hidden_dropout_prob,
             attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
             weight_decay=CFG.weight_decay,
@@ -826,6 +816,7 @@ def main():
                             "bigram_overlap_ratio",
                             "trigram_overlap_ratio"]
 
+    # TODO: Redundant amounts of features would be allowed.
     lgbm_feature_drop_dict = {
         "content": common_drop_columns + content_drop_columns,
         "wording": common_drop_columns + wording_drop_columns,
