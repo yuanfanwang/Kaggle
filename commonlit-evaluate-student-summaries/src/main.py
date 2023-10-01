@@ -67,8 +67,12 @@ class CFG:
     model_name="debertav3base"
     learning_rate= {
         "content": 7.0e-7,
-        "wording": 5.0e-7
+        "wording": 7.0e-7
     }
+    # learning_rate= {
+    #     "content": 7.0e-7,
+    #     "wording": 5.0e-7
+    # }
     weight_decay=0.02
     hidden_dropout_prob=0.1  # default: 0.005
     attention_probs_dropout_prob=0.1  # default: 0.005
@@ -691,10 +695,12 @@ def predict(
             test_df=test_df,
             fold=fold
         )
-
         test_df[f"{target}_pred_{fold}"] = pred
+        print(f"test_df {fold}: ", test_df)
+
     
     test_df[f"{target}"] = test_df[[f"{target}_pred_{fold}" for fold in range(CFG.n_splits)]].mean(axis=1)
+    print("test_df final: ", test_df)
 
     return test_df
 
@@ -791,7 +797,6 @@ def main():
                            "student_id",
                            "prompt_id",
                            "text",
-                           "fixed_summary_text",
                            "prompt_question",
                            "prompt_title", 
                            "prompt_text",  # original
@@ -808,7 +813,7 @@ def main():
     content_drop_columns = ["jj_count",
                             "nn_count",
                             "rb_count",
-                            "dupulicate_loss"]
+                            "duplicate_loss"]
 
     wording_drop_columns = ["sentence_ratio",
                             "length_ratio",
@@ -818,9 +823,14 @@ def main():
 
     # TODO: Redundant amounts of features would be allowed.
     lgbm_feature_drop_dict = {
-        "content": common_drop_columns + content_drop_columns,
-        "wording": common_drop_columns + wording_drop_columns,
+        "content": common_drop_columns,
+        "wording": common_drop_columns,
     }
+
+    # lgbm_feature_drop_dict = {
+    #     "content": common_drop_columns + content_drop_columns,
+    #     "wording": common_drop_columns + wording_drop_columns,
+    # }
 
     model_dict = {}
     for target in targets:
