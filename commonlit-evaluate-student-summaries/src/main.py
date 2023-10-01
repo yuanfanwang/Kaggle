@@ -18,7 +18,7 @@ from sklearn.model_selection import KFold, GroupKFold
 from tqdm import tqdm
 
 import nltk
-from nltk.corpus import stopwords
+# from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk import pos_tag 
 from collections import Counter
@@ -31,6 +31,29 @@ import lightgbm as lgb
 
 from rake_nltk import Rake
 
+stop_words_list = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves',
+                   'you', "you're", "you've", "you'll", "you'd", 'your', 'yours',
+                   'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she',
+                   "she's", 'her', 'hers', 'herself', 'it', "it's", 'its', 'itself',
+                   'they', 'them', 'their', 'theirs', 'themselves', 'what', 'which',
+                   'who', 'whom', 'this', 'that', "that'll", 'these', 'those', 'am',
+                   'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has',
+                   'had', 'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the',
+                   'and', 'but', 'if', 'or', 'because', 'as', 'until', 'while', 'of',
+                   'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into',
+                   'through', 'during', 'before', 'after', 'above', 'below', 'to',
+                   'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under',
+                   'again', 'further', 'then', 'once', 'here', 'there', 'when','where',
+                   'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most',
+                   'other', 'some', 'such', 'no', 'nor', 'not','only', 'own', 'same',
+                   'so', 'than', 'too', 'very', 's', 't','can', 'will', 'just', 'don',
+                   "don't", 'should', "should've",'now', 'd', 'll', 'm', 'o', 're',
+                   've', 'y', 'ain', 'aren',"aren't", 'couldn', "couldn't", 'didn',
+                   "didn't", 'doesn',"doesn't", 'hadn', "hadn't", 'hasn', "hasn't",
+                   'haven', "haven't",'isn', "isn't", 'ma', 'mightn', "mightn't",
+                   'mustn', "mustn't",'needn', "needn't", 'shan', "shan't", 'shouldn',
+                   "shouldn't",'wasn', "wasn't", 'weren', "weren't", 'won', "won't",
+                   'wouldn', "wouldn't"]
 
 torch.cuda.empty_cache()
 warnings.simplefilter("ignore")
@@ -90,8 +113,6 @@ class Tokenizer:
     def __init__(self,
                  model_name: str):
         self.tokenizer = AutoTokenizer.from_pretrained(f"/kaggle/input/{model_name}")
-        self.STOP_WARDS = set(stopwords.words('english'))
-        # self.spacy_ner_model = spacy.load('en_core_web_sm')
 
     def encode(self,
                text: str):
@@ -114,7 +135,6 @@ class TextPreprocessor:
     def __init__(self,
                  tokenizer: Tokenizer):
         self.tokenizer = tokenizer
-        self.STOP_WARDS = set(stopwords.words('english'))
         # self.spacy_ner_model = spacy.load('en_core_web_sm')
     
     def preprocess(self, text: str):
@@ -152,7 +172,6 @@ class FeatureExtractor:
 
 class Summarizer:
     def __init__(self):
-        nltk.download('stopwords')
         self.rake = Rake()
 
     def __call__(self, text: str) -> str:
@@ -177,7 +196,7 @@ class ContentFeatureExtractor(FeatureExtractor):
         self.summarizer = Summarizer() 
         self.speller = Speller()
         self.spellchecker = SpellChecker()
-        self.stop_words = set(stopwords.words('english'))
+        self.stop_words = set(stop_words_list)
         self.duplicate_loss_weight = 2
 
     def sentence_ratio(self, text: str):
@@ -715,7 +734,7 @@ def main():
         train_by_fold(
             train,
             model_name=CFG.model_name,
-            save_each_model=False,
+            save_each_model=True,
             target=target,
             learning_rate=CFG.learning_rate,
             hidden_dropout_prob=CFG.hidden_dropout_prob,
@@ -731,7 +750,7 @@ def main():
         train = validate(
             train,
             target=target,
-            save_each_model=False,
+            save_each_model=True,
             model_name=CFG.model_name,
             hidden_dropout_prob=CFG.hidden_dropout_prob,
             attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
@@ -758,7 +777,7 @@ def main():
         test = predict(
             test,
             target=target,
-            save_each_model=False,
+            save_each_model=True,
             model_name=CFG.model_name,
             hidden_dropout_prob=CFG.hidden_dropout_prob,
             attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
@@ -829,13 +848,11 @@ def main():
             dtrain = lgb.Dataset(X_train_cv, label=y_train_cv)
             dval = lgb.Dataset(X_eval_cv, label=y_eval_cv)
 
-            params = {
-                      'boosting_type': 'gbdt',
+            params = {'boosting_type': 'gbdt',
                       'random_state': 42,
                       'objective': 'regression',
                       'metric': 'rmse',
-                      'learning_rate': 0.05,
-                      }
+                      'learning_rate': 0.05}
 
             evaluation_results = {}
             model = lgb.train(params,
@@ -846,9 +863,8 @@ def main():
                               valid_sets=dval,
                               callbacks=[
                                   lgb.early_stopping(stopping_rounds=30, verbose=True),
-                                   lgb.log_evaluation(100),
-                                  lgb.callback.record_evaluation(evaluation_results)
-                                ],
+                                  lgb.log_evaluation(100),
+                                  lgb.callback.record_evaluation(evaluation_results)],
                               )
             models.append(model)
 
