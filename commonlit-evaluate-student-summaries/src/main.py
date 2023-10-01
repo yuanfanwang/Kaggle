@@ -535,7 +535,7 @@ class ContentScoreRegressor:
                 fold: int):
         """predict content score"""
 
-        input_test_df = test_df[self.input_cols + self.target_cols]
+        input_test_df = test_df[self.input_cols]
 
         test_dataset = Dataset.from_pandas(input_test_df, preserve_index=False)
         test_tokenized_datasets = test_dataset.map(self.tokenize_function_test, batched=False)
@@ -581,7 +581,6 @@ def train_by_fold(
     # delete old model files
     if os.path.exists(model_name):
         shutil.rmtree(model_name)
-
     os.mkdir(model_name)
 
     for fold in range(CFG.n_splits):
@@ -741,12 +740,10 @@ def main():
 
         rmse = mean_squared_error(train[target], train[f"{target}_pred"], squared=False)
         print(f"cv {target} rmse: {rmse}")
-
-        """
+        
+        ######### TODO: should be turn off in submission
         save_score = True
-        if save_score:
-            print(train[target])
-            print(train[f"{target}_pred"])
+        if save_score == True:
             save_directory = f"{CFG.model_name}/{target}_pred_score"
 
             if os.path.exists(save_directory):
@@ -755,9 +752,9 @@ def main():
 
             csv_file_name = 'score.csv'
             csv_file_path = os.path.join(save_directory, csv_file_name)
-            train[f"{target}_pred"].to_csv(csv_file_path, index=False)
-        """
-
+            train.to_csv(csv_file_path, index=False)
+        ##################################
+        
         test = predict(
             test,
             target=target,
@@ -767,7 +764,19 @@ def main():
             attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
             max_length=CFG.max_length
         )
+        
+        ######### TODO: should be turn off in submission
+        if save_score == True:
+            save_directory = f"{CFG.model_name}/{target}_test_result"
 
+            if os.path.exists(save_directory):
+                shutil.rmtree(save_directory)
+            os.mkdir(save_directory)
+
+            csv_file_name = 'test.csv'
+            csv_file_path = os.path.join(save_directory, csv_file_name)
+            test.to_csv(csv_file_path, index=False)
+        ###################################
     ## lgbm preprocess
     common_drop_columns = ["fold",
                            "student_id",
