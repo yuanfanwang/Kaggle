@@ -55,7 +55,7 @@ tqdm.pandas()
 
 class CFG:
     model_name="debertav3base"
-    learning_rate=1.0e-6
+    learning_rate=7.0e-7
     weight_decay=0.02
     hidden_dropout_prob=0.1  # default: 0.005
     attention_probs_dropout_prob=0.1  # default: 0.005
