@@ -18,7 +18,6 @@ from sklearn.model_selection import KFold, GroupKFold
 from tqdm import tqdm
 
 import nltk
-# from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk import pos_tag 
 from collections import Counter
@@ -65,13 +64,14 @@ tqdm.pandas()
 
 class CFG:
     model_name="debertav3base"
-    learning_rate= {
-        "content": 7.0e-7,
-        "wording": 7.0e-7
+    learning_rate = {
+        "content": 5.0e-7,
+        "wording": 5.0e-7
     }
+    # over learning
     # learning_rate= {
     #     "content": 7.0e-7,
-    #     "wording": 5.0e-7
+    #     "wording": 7.0e-7
     # }
     weight_decay=0.02
     hidden_dropout_prob=0.1  # default: 0.005
@@ -730,7 +730,7 @@ def main():
         train_by_fold(
             train,
             model_name=CFG.model_name,
-            save_each_model=True,
+            save_each_model=False,
             target=target,
             learning_rate=CFG.learning_rate[target],
             hidden_dropout_prob=CFG.hidden_dropout_prob,
@@ -746,7 +746,7 @@ def main():
         train = validate(
             train,
             target=target,
-            save_each_model=True,
+            save_each_model=False,
             model_name=CFG.model_name,
             hidden_dropout_prob=CFG.hidden_dropout_prob,
             attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
@@ -773,13 +773,13 @@ def main():
         test = predict(
             test,
             target=target,
-            save_each_model=True,
+            save_each_model=False,
             model_name=CFG.model_name,
             hidden_dropout_prob=CFG.hidden_dropout_prob,
             attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
             max_length=CFG.max_length
         )
-        
+
         ######### TODO: should be turn off in submission
         if save_score == True:
             save_directory = f"{CFG.model_name}/{target}_test_result"
@@ -792,23 +792,46 @@ def main():
             csv_file_path = os.path.join(save_directory, csv_file_name)
             test.to_csv(csv_file_path, index=False)
         ###################################
-    ## lgbm preprocess
-    common_drop_columns = ["fold",
-                           "student_id",
-                           "prompt_id",
-                           "text",
-                           "prompt_question",
-                           "prompt_title", 
-                           "prompt_text",  # original
-                           "prompt_length",
-                           "prioritized_prompt_words",
-                           "trimed_and_prioritized_prompt_words",
-                           "corrected_text",
-                           "summary_length"] + targets
 
-    # TODO: fold should be added?
-    additional_common_drop_columns = [f"content_pred_{i}" for i in range(CFG.n_splits)] + \
-                                     [f"wording_pred_{i}" for i in range(CFG.n_splits)]
+    train["word_overlap_count"] = train["word_overlap_ratio"] * train["summary_length"]
+    train["bigram_overlap_count"] = train["bigram_overlap_ratio"] * train["summary_length"]
+    train["trigram_overlap_count"] = train["trigram_overlap_ratio"] * train["summary_length"]
+    train["jjnnrb_count"] = train["jj_count"] + train["nn_count"] + train["rb_count"]
+    train["jjnnrb_ratio"] = train["jjnnrb_count"] / train["summary_length"]
+    train["duplicate_loss"] = train["duplicate_loss"] * -1
+    train["spell_miss_count"] = train["spell_miss_ratio"] * train["summary_length"]
+
+    test["word_overlap_count"] = test["word_overlap_ratio"] * test["summary_length"]
+    test["bigram_overlap_count"] = test["bigram_overlap_ratio"] * test["summary_length"]
+    test["trigram_overlap_count"] = test["trigram_overlap_ratio"] * test["summary_length"]
+    test["jjnnrb_count"] = test["jj_count"] + test["nn_count"] + test["rb_count"]
+    test["jjnnrb_ratio"] = test["jjnnrb_count"] / test["summary_length"]
+    test["duplicate_loss"] = test["duplicate_loss"] * -1
+    test["spell_miss_count"] = test["spell_miss_ratio"] * test["summary_length"]
+
+    ## lgbm preprocess
+    train_drop_columns = ["fold",
+                          "student_id",
+                          "prompt_id",
+                          "text",
+                          "prompt_question",
+                          "prompt_title", 
+                          "prompt_text",  # original
+                          "prioritized_prompt_words",
+                          "trimed_and_prioritized_prompt_words",
+                          "corrected_text"] + targets
+
+    test_drop_columns = ["student_id",
+                         "prompt_id",
+                         "text",
+                         "prompt_question",
+                         "prompt_title", 
+                         "prompt_text",  # original
+                         "prioritized_prompt_words",
+                         "trimed_and_prioritized_prompt_words",
+                         "corrected_text"] + \
+                        [f"content_pred_{i}" for i in range(CFG.n_splits)] + \
+                        [f"wording_pred_{i}" for i in range(CFG.n_splits)]
 
     content_drop_columns = ["jj_count",
                             "nn_count",
@@ -816,34 +839,36 @@ def main():
                             "duplicate_loss"]
 
     wording_drop_columns = ["sentence_ratio",
+                            "summary_length",
+                            "length_ratio",
+                            "sentence_ratio",
                             "length_ratio",
                             "word_overlap_ratio",
+                            "word_overlap_count",
                             "bigram_overlap_ratio",
-                            "trigram_overlap_ratio"]
+                            "bigram_overlap_count",
+                            "trigram_overlap_ratio",
+                            "trigram_overlap_count"]
 
     # TODO: Redundant amounts of features would be allowed.
-    lgbm_feature_drop_dict = {
-        "content": common_drop_columns,
-        "wording": common_drop_columns,
-    }
+    #lgbm_feature_drop_dict = {
+    #    "content": train_drop_columns,
+    #    "wording": train_drop_columns,
+    #}
 
-    # lgbm_feature_drop_dict = {
-    #     "content": common_drop_columns + content_drop_columns,
-    #     "wording": common_drop_columns + wording_drop_columns,
-    # }
 
     model_dict = {}
     for target in targets:
         models = []
 
         for fold in range(CFG.n_splits):
-        
-            X_train_cv = train[train["fold"] != fold].drop(columns=lgbm_feature_drop_dict[target])
-            print("x_train_cv head: ", X_train_cv.head())
+            drop_col = train_drop_columns
+            X_train_cv = train[train["fold"] != fold].drop(columns=drop_col)
+            # print("x_train_cv head: ", X_train_cv.head())
             y_train_cv = train[train["fold"] != fold][target]
-            print("y_train_cv head: ", y_train_cv.head())
+            # print("y_train_cv head: ", y_train_cv.head())
 
-            X_eval_cv = train[train["fold"] == fold].drop(columns=lgbm_feature_drop_dict[target])
+            X_eval_cv = train[train["fold"] == fold].drop(columns=drop_col)
             y_eval_cv = train[train["fold"] == fold][target]
 
             dtrain = lgb.Dataset(X_train_cv, label=y_train_cv)
@@ -853,7 +878,7 @@ def main():
                       'random_state': 42,
                       'objective': 'regression',
                       'metric': 'rmse',
-                      'learning_rate': 0.05}
+                      'learning_rate':8.0e-4}
 
             evaluation_results = {}
             model = lgb.train(params,
@@ -881,7 +906,8 @@ def main():
         trues = []
 
         for fold, model in enumerate(models):
-            X_eval_cv = train[train["fold"] == fold].drop(columns=lgbm_feature_drop_dict[target])
+            drop_col = train_drop_columns
+            X_eval_cv = train[train["fold"] == fold].drop(columns=drop_col)
             y_eval_cv = train[train["fold"] == fold][target]
 
             pred = model.predict(X_eval_cv)
@@ -898,13 +924,13 @@ def main():
     ## predict  
     pred_dict = {}
     for target in targets:
-        model = model_dict[target]
+        models = model_dict[target]
         preds = []
-
+        
         for fold, model in enumerate(models):
-            drop_columns = lgbm_feature_drop_dict[target] + additional_common_drop_columns
-            X_eval_cv = test.drop(columns=drop_columns) 
-            print("predict: ", X_eval_cv)
+            drop_col = test_drop_columns
+            X_eval_cv = test.drop(columns=drop_col) 
+            # print("predict: ", X_eval_cv)
 
             pred = model.predict(X_eval_cv)
             preds.append(pred)
@@ -919,8 +945,7 @@ def main():
 
         test[target] = test[[f"{target}_pred_{fold}" for fold in range(CFG.n_splits)]].mean(axis=1)
 
-    print(test)
-    print(sample_submission)
+    # print(test)
     test[["student_id", "content", "wording"]].to_csv("submission.csv", index=False)
 
 main()
