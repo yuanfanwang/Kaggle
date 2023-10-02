@@ -640,12 +640,12 @@ def validate(
         print(f"fold {fold}:")
 
         valid_data = train_df[train_df["fold"] == fold]
-        
+
         if save_each_model == True:
             model_dir = f"{target}/{model_name}/fold_{fold}"
         else:
             model_dir = f"{model_name}/fold_{fold}"
-        
+
         csr = ContentScoreRegressor(
             model_name=model_name,
             model_dir = model_dir,
