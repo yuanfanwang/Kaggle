@@ -21,11 +21,8 @@ import nltk
 from nltk.tokenize import word_tokenize
 from nltk import pos_tag 
 from collections import Counter
-# import spacy
 import re
-from autocorrect import Speller
 from spellchecker import SpellChecker
-from autocorrect import Speller
 import lightgbm as lgb
 
 from rake_nltk import Rake
@@ -65,8 +62,8 @@ tqdm.pandas()
 class CFG:
     model_name="debertav3base"
     learning_rate = {
-        "content": 5.0e-7,
-        "wording": 5.0e-7
+        "content": 7.0e-7,
+        "wording": 4.0e-7
     }
     # over learning
     # learning_rate= {
@@ -188,7 +185,6 @@ class ContentFeatureExtractor(FeatureExtractor):
     def __init__(self, tokenizer: Tokenizer):
         super().__init__(tokenizer)
         self.summarizer = Summarizer() 
-        self.speller = Speller()
         self.spellchecker = SpellChecker()
         self.stop_words = set(stop_words_list)
         self.duplicate_loss_weight = 2
@@ -212,20 +208,6 @@ class ContentFeatureExtractor(FeatureExtractor):
         else:
             return miss_count / text_length
     
-    def add_spelling_dictionary(self, text: str):
-        """dictionary update for pyspell checker and autocorrect"""
-        filtered_text = text.replace('.', '')
-        filtered_text = filtered_text.replace(',', '')
-        wordlist = filtered_text.split()
-        self.spellchecker.word_frequency.load_words(wordlist)
-        self.speller.nlp_data.update({token:1000 for token in wordlist})
-
-    def corrected_text(self, text: str):
-        modified_text = text.replace('.', '')
-        modified_text = modified_text.replace(',', '')
-        modified_text = self.speller(modified_text)
-        return modified_text
-
     # TODAY: culculation time
     def word_overlap_ratio(self, row):
         def check_is_stop_word(word):
@@ -235,7 +217,7 @@ class ContentFeatureExtractor(FeatureExtractor):
         prompt_text = prompt_text.replace(',', '')
         prompt_words = prompt_text.split()
 
-        summaries_text = row["corrected_text"]
+        summaries_text = row["text"]
         summaries_text = summaries_text.replace('.', '')
         summaries_text = summaries_text.replace(',', '')
         summary_words = summaries_text.split()
@@ -261,7 +243,7 @@ class ContentFeatureExtractor(FeatureExtractor):
         prompt_text = prompt_text.replace(',', '')
         prompt_words = prompt_text.split()
 
-        summaries_text = row["corrected_text"]
+        summaries_text = row["text"]
         summaries_text = summaries_text.replace('.', '')
         summaries_text = summaries_text.replace(',', '')
         summary_words = summaries_text.split()
@@ -299,7 +281,7 @@ class ContentFeatureExtractor(FeatureExtractor):
             prompt_dict_list[row["prompt_id"]] = token_dict(row["prompt_text"])
 
         for i, row in input_df.iterrows():
-            summaries_dict = token_dict(row["corrected_text"])
+            summaries_dict = token_dict(row["text"])
             prompt_id = row["prompt_id"]
             duplicate_loss = 0
             jj_count = 0
@@ -356,10 +338,6 @@ class ContentFeatureExtractor(FeatureExtractor):
         )
 
         # [devert]
-        summaries["corrected_text"] = summaries["text"].progress_apply(
-            lambda x: self.corrected_text(x)
-        )
-        print("summaries corrected text head: ", summaries["corrected_text"].head())
 
         summaries["summary_length"] = summaries["text"].progress_apply(
             lambda x: len(x.split())
@@ -391,8 +369,7 @@ class ContentFeatureExtractor(FeatureExtractor):
         input_df['trigram_overlap_ratio'] = input_df.progress_apply(self.ngram_co_occurrence,args=(3,), axis=1)
 
         # [wording] 2 ~ 5
-        self.content_feature(prompts, input_df)  # sould be executed after creating "corrected_text"
-
+        self.content_feature(prompts, input_df)
         return input_df
 
 
@@ -433,7 +410,7 @@ class ContentScoreRegressor:
                  attention_probs_dropout_prob: float,
                  max_length: int):
 
-        self.input_cols = ["trimed_and_prioritized_prompt_words", "corrected_text"]
+        self.input_cols = ["trimed_and_prioritized_prompt_words", "text"]
 
         self.target = target
         self.target_cols = [target]
@@ -460,7 +437,7 @@ class ContentScoreRegressor:
     def tokenize_function(self, examples: pd.DataFrame):
         labels = [examples[self.target]]
         trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
-        text = examples["corrected_text"]
+        text = examples["text"]
 
         # TODO: add prompt_question for third feature of the token. [0,0,0,1,1,1,1,1,2,2,2,2,2] 
         tokenized = self.tokenizer(trimed_and_prioritized_text, text,
@@ -475,7 +452,7 @@ class ContentScoreRegressor:
     
     def tokenize_function_test(self, examples: pd.DataFrame):
         trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
-        text = examples["corrected_text"]
+        text = examples["text"]
 
         # TODO: add prompt_question for third feature of the token. [0,0,0,1,1,1,1,1,2,2,2,2,2] 
         tokenized = self.tokenizer(trimed_and_prioritized_text, text,
@@ -712,6 +689,7 @@ def main():
     content_feature_extractor = ContentFeatureExtractor(tokenizer)
 
     prompts = text_preprocessor(prompts_train, "prompt_text")
+    prompts = text_preprocessor(prompts, "prompt_question")
     prompts = text_preprocessor(prompts, "prompt_title")
     summaries = text_preprocessor(summaries_train, "text")
     train = content_feature_extractor(prompts, summaries)
@@ -818,8 +796,7 @@ def main():
                           "prompt_title", 
                           "prompt_text",  # original
                           "prioritized_prompt_words",
-                          "trimed_and_prioritized_prompt_words",
-                          "corrected_text"] + targets
+                          "trimed_and_prioritized_prompt_words"] + targets
 
     test_drop_columns = ["student_id",
                          "prompt_id",
@@ -828,8 +805,7 @@ def main():
                          "prompt_title", 
                          "prompt_text",  # original
                          "prioritized_prompt_words",
-                         "trimed_and_prioritized_prompt_words",
-                         "corrected_text"] + \
+                         "trimed_and_prioritized_prompt_words"] + \
                         [f"content_pred_{i}" for i in range(CFG.n_splits)] + \
                         [f"wording_pred_{i}" for i in range(CFG.n_splits)]
 
