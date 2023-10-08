@@ -78,8 +78,8 @@ class CFG:
     #     "wording": 7.0e-7   tring
     # }
     weight_decay=0.02
-    hidden_dropout_prob=0.05  # default: 0.005
-    attention_probs_dropout_prob=0.05  # default: 0.005
+    hidden_dropout_prob=0.007  # default: 0.005
+    attention_probs_dropout_prob=0.007  # default: 0.005
     num_train_epochs=5
     n_splits=4
     batch_size=10
@@ -128,13 +128,13 @@ class Tokenizer:
         prompt_max_length = min(len(text_ids), 120)
         trimed_text = self.tokenizer.decode(text_ids[:prompt_max_length])
         return trimed_text
-    
+
 class TextPreprocessor:
     def __init__(self,
                  tokenizer: Tokenizer):
         self.tokenizer = tokenizer
         # self.spacy_ner_model = spacy.load('en_core_web_sm')
-    
+
     def preprocess(self, text: str):
         text = text.lower()
         text = text.replace('.', ' . ')
@@ -148,7 +148,7 @@ class TextPreprocessor:
         if text[-1] != '.':
             text += '.'
         return text
-    
+
     def __call__(self,
                  df: pd.DataFrame,
                  col: str) -> pd.DataFrame:
@@ -343,6 +343,10 @@ class ContentFeatureExtractor(FeatureExtractor):
             lambda x: len(x.split())
         )
 
+        summaries["prioritized_text"] = summaries["text"].progress_apply(
+            lambda x: self.summarizer(x)
+        )
+
         # [content] 1
         # [wording] 1
         summaries["spell_miss_ratio"] = summaries["text"].progress_apply(
@@ -413,7 +417,7 @@ class ContentScoreRegressor:
         self.input_cols = ["trimed_and_prioritized_prompt_words",
                            "prompt_title",
                            "prompt_question",
-                           "text"]
+                           "prioritized_text"]
 
         self.target = target
         self.target_cols = [target]
@@ -442,7 +446,7 @@ class ContentScoreRegressor:
 
         if self.target == "content":
             trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
-            text = examples["text"]
+            text = examples["prioritized_text"]
             tokenized = self.tokenizer(trimed_and_prioritized_text, text,
                                        padding="max_length",
                                        truncation=True,
@@ -454,7 +458,7 @@ class ContentScoreRegressor:
         elif self.target == "wording":
             prompt_title = examples["prompt_title"]
             prompt_question = examples["prompt_question"]
-            text = examples["text"]
+            text = examples["prioritized_text"]
             input_text = prompt_title + " " + self.tokenizer.sep_token + " " + \
                          prompt_question + " " + self.tokenizer.sep_token + " " + \
                          text
@@ -472,7 +476,7 @@ class ContentScoreRegressor:
     def tokenize_function_test(self, examples: pd.DataFrame):
         if self.target == "content":
             trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
-            text = examples["text"]
+            text = examples["prioritized_text"]
             tokenized = self.tokenizer(trimed_and_prioritized_text, text,
                                        padding="max_length",
                                        truncation=True,
@@ -480,7 +484,7 @@ class ContentScoreRegressor:
         elif self.target == "wording":
             prompt_title = examples["prompt_title"]
             prompt_question = examples["prompt_question"]
-            text = examples["text"]
+            text = examples["prioritized_text"]
             input_text = prompt_title + " " + self.tokenizer.sep_token + " " + \
                          prompt_question + " " + self.tokenizer.sep_token + " " + \
                          text
@@ -727,6 +731,18 @@ def main():
     summaries = text_preprocessor(summaries_train, "text")
     train = content_feature_extractor(prompts, summaries)
 
+    if True:
+        save_directory = "train/prioritized_text"
+
+        if os.path.exists(save_directory):
+            shutil.rmtree(save_directory)
+        os.mkdir("train")
+        os.mkdir(save_directory)
+
+        csv_file_name = 'prioritized_text.csv'
+        csv_file_path = os.path.join(save_directory, csv_file_name)
+        train.to_csv(csv_file_path, index=False)
+
     prompts = text_preprocessor(prompts_test, "prompt_text")
     prompts = text_preprocessor(prompts, "prompt_question")
     prompts = text_preprocessor(prompts, "prompt_title")
@@ -739,7 +755,7 @@ def main():
         train.loc[val_index, "fold"] = i
 
     ## devert process
-    targets = ["content", "wording"]
+    targets = ["wording"]
     for target in targets:
         train_by_fold(
             train,
@@ -828,6 +844,7 @@ def main():
                           "student_id",
                           "prompt_id",
                           "text",
+                          "prioritized_text",
                           "prompt_question",
                           "prompt_title", 
                           "prompt_text",  # original
@@ -837,6 +854,7 @@ def main():
     test_drop_columns = ["student_id",
                          "prompt_id",
                          "text",
+                         "prioritized_text",
                          "prompt_question",
                          "prompt_title", 
                          "prompt_text",  # original
