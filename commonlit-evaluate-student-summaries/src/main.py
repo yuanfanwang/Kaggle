@@ -1,3 +1,10 @@
+"""
+! pip uninstall preprocessing -y
+! pip install /kaggle/input/rake-nltk/rake-nltk/nltk-3.8.1-py3-none-any.whl
+! pip install /kaggle/input/rake-nltk/rake-nltk/rake_nltk-1.0.6-py3-none-any.whl
+! pip install /kaggle/input/pyspellchecker/pyspellchecker/pyspellchecker-0.7.2-py3-none-any.whl
+"""
+
 from typing import Any
 import numpy as np
 import pandas as pd
@@ -63,22 +70,22 @@ class CFG:
     model_name="debertav3base"
     learning_rate = {
         "content": 7.0e-7,
-        "wording": 4.0e-7
+        "wording": 7.0e-7
     }
     # over learning
     # learning_rate= {
-    #     "content": 7.0e-7,
-    #     "wording": 7.0e-7
+    #     "content": 7.0e-7,  fixed
+    #     "wording": 7.0e-7   tring
     # }
     weight_decay=0.02
-    hidden_dropout_prob=0.1  # default: 0.005
-    attention_probs_dropout_prob=0.1  # default: 0.005
+    hidden_dropout_prob=0.05  # default: 0.005
+    attention_probs_dropout_prob=0.05  # default: 0.005
     num_train_epochs=5
     n_splits=4
-    batch_size=15  # TODO: default: 12
+    batch_size=10
     random_seed=42
     save_steps=100
-    max_length=400
+    max_length=512
 
 
 def seed_everything(seed: int):
@@ -142,7 +149,6 @@ class TextPreprocessor:
             text += '.'
         return text
     
-    # TODO: prompt_question prompt_title
     def __call__(self,
                  df: pd.DataFrame,
                  col: str) -> pd.DataFrame:
@@ -208,7 +214,6 @@ class ContentFeatureExtractor(FeatureExtractor):
         else:
             return miss_count / text_length
     
-    # TODAY: culculation time
     def word_overlap_ratio(self, row):
         def check_is_stop_word(word):
             return word in self.stop_words
@@ -232,7 +237,6 @@ class ContentFeatureExtractor(FeatureExtractor):
         else:
             return overlap_word_length / text_length
 
-    # TODAY: calculation time
     def ngrams(self, token, n):
         ngrams = zip(*[token[i:] for i in range(n)])
         return [" ".join(ngram) for ngram in ngrams]
@@ -320,10 +324,6 @@ class ContentFeatureExtractor(FeatureExtractor):
                  prompts: pd.DataFrame,
                  summaries: pd.DataFrame) -> pd.DataFrame:
         
-        prompts["prompt_text"].apply(
-            lambda x: self.add_spelling_dictionary(x)
-        )
-
         prompts["prompt_length"] = prompts["prompt_text"].progress_apply(
             lambda x: len(x.split())
         )
@@ -410,7 +410,10 @@ class ContentScoreRegressor:
                  attention_probs_dropout_prob: float,
                  max_length: int):
 
-        self.input_cols = ["trimed_and_prioritized_prompt_words", "text"]
+        self.input_cols = ["trimed_and_prioritized_prompt_words",
+                           "prompt_title",
+                           "prompt_question",
+                           "text"]
 
         self.target = target
         self.target_cols = [target]
@@ -433,32 +436,58 @@ class ContentScoreRegressor:
         self.data_collator = DataCollatorWithPadding(
             tokenizer=self.tokenizer
         )
-    
+ 
     def tokenize_function(self, examples: pd.DataFrame):
         labels = [examples[self.target]]
-        trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
-        text = examples["text"]
 
-        # TODO: add prompt_question for third feature of the token. [0,0,0,1,1,1,1,1,2,2,2,2,2] 
-        tokenized = self.tokenizer(trimed_and_prioritized_text, text,
-                                   padding="max_length",
-                                   truncation=True,
-                                   max_length=self.max_length)
-        token = {
-            **tokenized,
-            "labels": labels
-        }
+        if self.target == "content":
+            trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
+            text = examples["text"]
+            tokenized = self.tokenizer(trimed_and_prioritized_text, text,
+                                       padding="max_length",
+                                       truncation=True,
+                                       max_length=self.max_length)
+            token = {
+                **tokenized,
+                "labels": labels
+            }
+        elif self.target == "wording":
+            prompt_title = examples["prompt_title"]
+            prompt_question = examples["prompt_question"]
+            text = examples["text"]
+            input_text = prompt_title + " " + self.tokenizer.sep_token + " " + \
+                         prompt_question + " " + self.tokenizer.sep_token + " " + \
+                         text
+            tokenized = self.tokenizer(input_text,
+                                       padding="max_length",
+                                       truncation=True,
+                                       max_length=self.max_length)
+            token = {
+                **tokenized,
+                "labels": labels
+            }
+
         return token
     
     def tokenize_function_test(self, examples: pd.DataFrame):
-        trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
-        text = examples["text"]
-
-        # TODO: add prompt_question for third feature of the token. [0,0,0,1,1,1,1,1,2,2,2,2,2] 
-        tokenized = self.tokenizer(trimed_and_prioritized_text, text,
-                                   padding="max_length",
-                                   truncation=True,
-                                   max_length=self.max_length)       
+        if self.target == "content":
+            trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
+            text = examples["text"]
+            tokenized = self.tokenizer(trimed_and_prioritized_text, text,
+                                       padding="max_length",
+                                       truncation=True,
+                                       max_length=self.max_length)
+        elif self.target == "wording":
+            prompt_title = examples["prompt_title"]
+            prompt_question = examples["prompt_question"]
+            text = examples["text"]
+            input_text = prompt_title + " " + self.tokenizer.sep_token + " " + \
+                         prompt_question + " " + self.tokenizer.sep_token + " " + \
+                         text
+            tokenized = self.tokenizer(input_text,
+                                       padding="max_length",
+                                       truncation=True,
+                                       max_length=self.max_length) 
         return tokenized
 
     def train(self,
@@ -502,7 +531,9 @@ class ContentScoreRegressor:
             eval_steps=save_steps,
             save_steps=save_steps,
             metric_for_best_model="rmse",
-            save_total_limit=1
+            save_total_limit=1,
+            fp16=True,
+            auto_find_batch_size=True
         )
 
         trainer = Trainer(
@@ -540,7 +571,9 @@ class ContentScoreRegressor:
             do_train=False,
             do_predict=True,
             per_device_eval_batch_size=4,
-            dataloader_drop_last=False
+            dataloader_drop_last=False,
+            fp16=True,
+            auto_find_batch_size=True
         )
 
         infer_content = Trainer(
@@ -667,7 +700,7 @@ def predict(
             attention_probs_dropout_prob=attention_probs_dropout_prob,
             max_length=max_length
             )
-        
+
         pred = csr.predict(
             test_df=test_df,
             fold=fold
@@ -675,7 +708,7 @@ def predict(
         test_df[f"{target}_pred_{fold}"] = pred
         print(f"test_df {fold}: ", test_df)
 
-    
+
     test_df[f"{target}"] = test_df[[f"{target}_pred_{fold}" for fold in range(CFG.n_splits)]].mean(axis=1)
     print("test_df final: ", test_df)
 
@@ -695,6 +728,9 @@ def main():
     train = content_feature_extractor(prompts, summaries)
 
     prompts = text_preprocessor(prompts_test, "prompt_text")
+    prompts = text_preprocessor(prompts, "prompt_question")
+    prompts = text_preprocessor(prompts, "prompt_title")
+    print(prompts)
     summaries = text_preprocessor(summaries_test, "text")
     test = content_feature_extractor(prompts, summaries)
 
@@ -776,7 +812,7 @@ def main():
     train["trigram_overlap_count"] = train["trigram_overlap_ratio"] * train["summary_length"]
     train["jjnnrb_count"] = train["jj_count"] + train["nn_count"] + train["rb_count"]
     train["jjnnrb_ratio"] = train["jjnnrb_count"] / train["summary_length"]
-    train["duplicate_loss"] = train["duplicate_loss"] * -1
+    train["duplicate_loss"] = train["duplicate_loss"]
     train["spell_miss_count"] = train["spell_miss_ratio"] * train["summary_length"]
 
     test["word_overlap_count"] = test["word_overlap_ratio"] * test["summary_length"]
@@ -784,7 +820,7 @@ def main():
     test["trigram_overlap_count"] = test["trigram_overlap_ratio"] * test["summary_length"]
     test["jjnnrb_count"] = test["jj_count"] + test["nn_count"] + test["rb_count"]
     test["jjnnrb_ratio"] = test["jjnnrb_count"] / test["summary_length"]
-    test["duplicate_loss"] = test["duplicate_loss"] * -1
+    test["duplicate_loss"] = test["duplicate_loss"]
     test["spell_miss_count"] = test["spell_miss_ratio"] * test["summary_length"]
 
     ## lgbm preprocess
@@ -825,12 +861,6 @@ def main():
                             "bigram_overlap_count",
                             "trigram_overlap_ratio",
                             "trigram_overlap_count"]
-
-    # TODO: Redundant amounts of features would be allowed.
-    #lgbm_feature_drop_dict = {
-    #    "content": train_drop_columns,
-    #    "wording": train_drop_columns,
-    #}
 
 
     model_dict = {}
