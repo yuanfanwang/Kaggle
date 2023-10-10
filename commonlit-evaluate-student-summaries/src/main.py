@@ -5,22 +5,18 @@
 ! pip install /kaggle/input/pyspellchecker/pyspellchecker/pyspellchecker-0.7.2-py3-none-any.whl
 """
 
-from typing import Any
 import numpy as np
 import pandas as pd
 import warnings
 import logging
 import os
 import shutil
-import json
-import transformers
-from transformers import AutoModel, AutoTokenizer, AutoConfig, AutoModelForSequenceClassification
+from transformers import AutoTokenizer, AutoConfig, AutoModelForSequenceClassification
 from transformers import DataCollatorWithPadding
 from datasets import Dataset,load_dataset, load_from_disk
 from transformers import TrainingArguments, Trainer
 from datasets import load_metric, disable_progress_bar
 from sklearn.metrics import mean_squared_error
-import torch
 from sklearn.model_selection import KFold, GroupKFold
 from tqdm import tqdm
 
@@ -31,7 +27,6 @@ from collections import Counter
 import re
 from spellchecker import SpellChecker
 import lightgbm as lgb
-
 from rake_nltk import Rake
 
 stop_words_list = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves',
@@ -58,7 +53,6 @@ stop_words_list = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves',
                    "shouldn't",'wasn', "wasn't", 'weren', "weren't", 'won', "won't",
                    'wouldn', "wouldn't"]
 
-torch.cuda.empty_cache()
 warnings.simplefilter("ignore")
 logging.disable(logging.ERROR)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -72,14 +66,15 @@ class CFG:
         "content": 7.0e-7,
         "wording": 7.0e-7
     }
-    # over learning
-    # learning_rate= {
-    #     "content": 7.0e-7,  fixed
-    #     "wording": 7.0e-7   tring
-    # }
     weight_decay=0.02
-    hidden_dropout_prob=0.007  # default: 0.005
-    attention_probs_dropout_prob=0.007  # default: 0.005
+    hidden_dropout_prob = {
+        "content": 0.1,
+        "wording": 0.007
+    }
+    attention_probs_dropout_prob = {
+        "content": 0.1,
+        "wording": 0.007
+    }
     num_train_epochs=5
     n_splits=4
     batch_size=10
@@ -213,7 +208,7 @@ class ContentFeatureExtractor(FeatureExtractor):
             return 0
         else:
             return miss_count / text_length
-    
+
     def word_overlap_ratio(self, row):
         def check_is_stop_word(word):
             return word in self.stop_words
@@ -240,7 +235,7 @@ class ContentFeatureExtractor(FeatureExtractor):
     def ngrams(self, token, n):
         ngrams = zip(*[token[i:] for i in range(n)])
         return [" ".join(ngram) for ngram in ngrams]
-    
+
     def ngram_co_occurrence(self, row, n: int) -> int:
         prompt_text = row["prompt_text"]
         prompt_text = prompt_text.replace('.', '')
@@ -417,6 +412,7 @@ class ContentScoreRegressor:
         self.input_cols = ["trimed_and_prioritized_prompt_words",
                            "prompt_title",
                            "prompt_question",
+                           "text",
                            "prioritized_text"]
 
         self.target = target
@@ -446,7 +442,7 @@ class ContentScoreRegressor:
 
         if self.target == "content":
             trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
-            text = examples["prioritized_text"]
+            text = examples["text"]
             tokenized = self.tokenizer(trimed_and_prioritized_text, text,
                                        padding="max_length",
                                        truncation=True,
@@ -476,7 +472,7 @@ class ContentScoreRegressor:
     def tokenize_function_test(self, examples: pd.DataFrame):
         if self.target == "content":
             trimed_and_prioritized_text = examples["trimed_and_prioritized_prompt_words"]
-            text = examples["prioritized_text"]
+            text = examples["text"]
             tokenized = self.tokenizer(trimed_and_prioritized_text, text,
                                        padding="max_length",
                                        truncation=True,
@@ -503,6 +499,12 @@ class ContentScoreRegressor:
               weight_decay: float,
               num_train_epochs: int,
               save_steps: int) -> None:
+        
+        if self.target == "content":
+            fp16 = False
+        else:
+            fp16 = True
+            
 
         input_train_df = train_df[self.input_cols + self.target_cols]
         input_valid_df = valid_df[self.input_cols + self.target_cols]
@@ -536,7 +538,7 @@ class ContentScoreRegressor:
             save_steps=save_steps,
             metric_for_best_model="rmse",
             save_total_limit=1,
-            fp16=True,
+            fp16=fp16,
             auto_find_batch_size=True
         )
 
@@ -560,6 +562,11 @@ class ContentScoreRegressor:
                 fold: int):
         """predict content score"""
 
+        if self.target == "content":
+            fp16 = False
+        else:
+            fp16 = True
+
         input_test_df = test_df[self.input_cols]
 
         test_dataset = Dataset.from_pandas(input_test_df, preserve_index=False)
@@ -576,7 +583,7 @@ class ContentScoreRegressor:
             do_predict=True,
             per_device_eval_batch_size=4,
             dataloader_drop_last=False,
-            fp16=True,
+            fp16=fp16,
             auto_find_batch_size=True
         )
 
@@ -730,8 +737,10 @@ def main():
     prompts = text_preprocessor(prompts, "prompt_title")
     summaries = text_preprocessor(summaries_train, "text")
     train = content_feature_extractor(prompts, summaries)
+    
+    train.at[0, "text"] = ""
 
-    if True:
+    if False:
         save_directory = "train/prioritized_text"
 
         if os.path.exists(save_directory):
@@ -755,7 +764,7 @@ def main():
         train.loc[val_index, "fold"] = i
 
     ## devert process
-    targets = ["wording"]
+    targets = ["content", "wording"]
     for target in targets:
         train_by_fold(
             train,
@@ -763,8 +772,8 @@ def main():
             save_each_model=False,
             target=target,
             learning_rate=CFG.learning_rate[target],
-            hidden_dropout_prob=CFG.hidden_dropout_prob,
-            attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
+            hidden_dropout_prob=CFG.hidden_dropout_prob[target],
+            attention_probs_dropout_prob=CFG.attention_probs_dropout_prob[target],
             weight_decay=CFG.weight_decay,
             num_train_epochs=CFG.num_train_epochs,
             n_splits=CFG.n_splits,
@@ -778,8 +787,8 @@ def main():
             target=target,
             save_each_model=False,
             model_name=CFG.model_name,
-            hidden_dropout_prob=CFG.hidden_dropout_prob,
-            attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
+            hidden_dropout_prob=CFG.hidden_dropout_prob[target],
+            attention_probs_dropout_prob=CFG.attention_probs_dropout_prob[target],
             max_length=CFG.max_length
         )
 
@@ -805,8 +814,8 @@ def main():
             target=target,
             save_each_model=False,
             model_name=CFG.model_name,
-            hidden_dropout_prob=CFG.hidden_dropout_prob,
-            attention_probs_dropout_prob=CFG.attention_probs_dropout_prob,
+            hidden_dropout_prob=CFG.hidden_dropout_prob[target],
+            attention_probs_dropout_prob=CFG.attention_probs_dropout_prob[target],
             max_length=CFG.max_length
         )
 
