@@ -2,8 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import statistics
 
-train = pd.read_csv("data/train1008.csv")
-
+train = pd.read_csv("data/train1010.csv")
 
 # train["wording_pred"] = train["content_pred"]
 x = train["content"]
