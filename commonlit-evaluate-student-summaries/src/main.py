@@ -140,6 +140,8 @@ class TextPreprocessor:
         text = text.replace(' . ', '. ')
         text = text.replace(' , ', '. ')
         text = text.rstrip()
+        if text == "":
+            text = "nan."
         if text[-1] != '.':
             text += '.'
         return text
@@ -717,11 +719,8 @@ def predict(
             fold=fold
         )
         test_df[f"{target}_pred_{fold}"] = pred
-        print(f"test_df {fold}: ", test_df)
-
 
     test_df[f"{target}"] = test_df[[f"{target}_pred_{fold}" for fold in range(CFG.n_splits)]].mean(axis=1)
-    print("test_df final: ", test_df)
 
     return test_df
 
@@ -753,7 +752,6 @@ def main():
     prompts = text_preprocessor(prompts_test, "prompt_text")
     prompts = text_preprocessor(prompts, "prompt_question")
     prompts = text_preprocessor(prompts, "prompt_title")
-    print(prompts)
     summaries = text_preprocessor(summaries_test, "text")
     test = content_feature_extractor(prompts, summaries)
 
@@ -794,8 +792,8 @@ def main():
         print(f"cv {target} rmse: {rmse}")
         
         ######### TODO: should be turn off in submission
-        save_score = True
-        if save_score == True:
+
+        if True:
             save_directory = f"{CFG.model_name}/{target}_pred_score"
 
             if os.path.exists(save_directory):
@@ -818,7 +816,7 @@ def main():
         )
 
         ######### TODO: should be turn off in submission
-        if save_score == True:
+        if False:
             save_directory = f"{CFG.model_name}/{target}_test_result"
 
             if os.path.exists(save_directory):
@@ -895,9 +893,7 @@ def main():
         for fold in range(CFG.n_splits):
             drop_col = train_drop_columns
             X_train_cv = train[train["fold"] != fold].drop(columns=drop_col)
-            # print("x_train_cv head: ", X_train_cv.head())
             y_train_cv = train[train["fold"] != fold][target]
-            # print("y_train_cv head: ", y_train_cv.head())
 
             X_eval_cv = train[train["fold"] == fold].drop(columns=drop_col)
             y_eval_cv = train[train["fold"] == fold][target]
@@ -961,7 +957,6 @@ def main():
         for fold, model in enumerate(models):
             drop_col = test_drop_columns
             X_eval_cv = test.drop(columns=drop_col) 
-            # print("predict: ", X_eval_cv)
 
             pred = model.predict(X_eval_cv)
             preds.append(pred)
@@ -976,7 +971,6 @@ def main():
 
         test[target] = test[[f"{target}_pred_{fold}" for fold in range(CFG.n_splits)]].mean(axis=1)
 
-    # print(test)
     test[["student_id", "content", "wording"]].to_csv("submission.csv", index=False)
 
 main()
