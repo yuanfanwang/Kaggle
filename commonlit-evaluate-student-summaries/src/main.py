@@ -738,8 +738,6 @@ def main():
     summaries = text_preprocessor(summaries_train, "text")
     train = content_feature_extractor(prompts, summaries)
     
-    train.at[0, "text"] = ""
-
     if False:
         save_directory = "train/prioritized_text"
 
