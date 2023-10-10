@@ -252,7 +252,7 @@ class ContentFeatureExtractor(FeatureExtractor):
         prompt_ngrams = set(self.ngrams(prompt_words, n))
         summary_ngrams = set(self.ngrams(summary_words, n))
         common_ngrams = prompt_ngrams.intersection(summary_ngrams)
-        if len(summary_words) - n + 1 < 0:
+        if len(summary_words) - n + 1 <= 0:
             return 0
         else:
             return len(common_ngrams) / (len(summary_words) - n + 1)
