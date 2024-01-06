@@ -55,3 +55,4 @@ print(client_2_df)
 display_all(client_2_df, 50)
 """
 
+print(train_client_df)
