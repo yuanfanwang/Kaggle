@@ -1,0 +1,8 @@
+version: '3'
+services:
+  kaggle:
+    container_name: kaggle
+    image: kaggle/python:latest
+    volumes:
+      - /Users/yuanfanwang/Projects/Kaggle:/home/competitions
+    working_dir: /home/competitions/${COMPETITION}
