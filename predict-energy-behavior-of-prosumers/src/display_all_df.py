@@ -37,7 +37,7 @@ def display_all(df, n_rows=100):
     print("-" * df_len)
     print("\n\n\n\n\n")
 
-train_client_df = train_df.filter(pl.col("prediction_unit_id") == 2) \
+train_client_df = train_df.filter(pl.col("prediction_unit_id") == 1) \
                           .join(client_df, on=["county", "is_business", "product_type", "data_block_id",])
 
 """
@@ -55,4 +55,4 @@ print(client_2_df)
 display_all(client_2_df, 50)
 """
 
-display_all(train_client_df)
+display_all(forecast_weather_df, 300)
