@@ -1,7 +1,12 @@
 import polars as pl
 import datetime as dt
 
-basetime = pl.datetime(2021,9,1)
-now = pl.datetime(2021, 9, 10)
-id = (now - basetime).dt.days()
-print(id)
+data = {'column1': [1, 2, 3], 'column2': ['A', 'B', 'C']}
+df = pl.DataFrame(data)
+
+# Use with_columns to add a new column
+new_df = df.with_columns([
+    pl.col('column1').alias("new_column1")
+])
+
+print(new_df)
