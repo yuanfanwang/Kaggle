@@ -84,7 +84,6 @@ class Preprocess:
             df = self.get_data_block_id(df, "date")
         return df
 
-
     def client_feature(self, df):
         df = df.with_columns(
             pl.col("date").cast(pl.Date).alias("date") + pl.duration(days=2)
@@ -124,6 +123,7 @@ class Preprocess:
 debug = Debug()
 preprocess = Preprocess()
 
+"""
 print("train_df datetime:")
 debug.display_time_range(train_df, "datetime")                        # base
 print("\n")
@@ -151,7 +151,8 @@ print("\n")
 print("historical_weather_df datetime:")
 debug.display_time_range(historical_weather_df, "datetime")           # 1 day before base
 print("\n")
-
+"""
 
 # debug.display_all(forecast_weather_df, 100)
 # train_df = preprocess.revealed_targets_feature(train_df, "datetime")
+
