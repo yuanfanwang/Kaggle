@@ -70,3 +70,30 @@ trainer = Trainer(
 )
 
 trainer.train()
+
+
+# MEMO:
+# batch_size * steps = total number of the data
+# step size is defined by the batch size automatically
+# the step count is different between P100 and T4x2 because the batch size is different
+# how to define the batch size?
+# if I can define the batch size manually, the step size for the P100 and T4x2 will be the same
+# P100: 2553 steps, 2553 / 3 = 851 (steps), 6807 / 851 = 8  (batch size)
+# T4x2: 1278 steps, 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
+# epoch = the number of learning using the whole data
+
+
+# TODO:
+# make the time to train the model shorter
+# fold, how to define the fold
+# create new dataset to train the model strongly
+# epoch
+# loss
+# metrics
+# optuna?
+# batch (the size is 3 as default?)
+# can labels be a list?
+# change dummy labels to real labels
+# the relation between the token size and the hidden size, currently the hidden size is 768
+# use google colab to train the model using devera-v3-xlarge
+
