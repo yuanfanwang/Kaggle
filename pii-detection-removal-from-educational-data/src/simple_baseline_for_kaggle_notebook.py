@@ -1,5 +1,5 @@
 from transformers import AutoTokenizer,                      \
-                         AutoModelForSequenceClassification, \
+                         AutoModelForTokenClassification, \
                          DataCollatorWithPadding,            \
                          Trainer,                            \
                          TrainingArguments
@@ -47,7 +47,10 @@ test_data = test_data.remove_columns(["document", "full_text", "tokens", "traili
 
 
 ##### Model
-model = AutoModelForSequenceClassification.from_pretrained(model_name)
+# AutoModelForTokenClassification
+# https://huggingface.co/transformers/v3.0.2/model_doc/auto.html#transformers.AutoModelForTokenClassification
+
+model = AutoModelForTokenClassification.from_pretrained(model_name)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = model.to(device)
 

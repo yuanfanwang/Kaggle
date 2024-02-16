@@ -1,0 +1,44 @@
+# v0.1 TODO:
+# (done)      epoch (the size is 3 as default?)
+# (done)      batch (fix the size as 8 or 16)
+
+# v0.2
+# can labels be a list?
+
+# v0.2 TODO
+# the relation between the token size and the hidden size, currently the hidden size is 768
+# model_config
+# check why torch.cuda.empty_cache() doesn't work
+
+# v0.3
+# loss
+# metrics
+
+# v0.4 TODO:
+# fold, how to define the fold
+
+# v0.5 TODO:
+# change dummy labels to real labels
+# practical loss func
+# practical metrics func
+
+
+# v1.0 TODO:
+# sample submission
+
+
+# v2.0~ TODO:
+# create new dataset to train the model strongly
+# use google colab to train the model using devera-v3-xlarge
+# optuna?
+
+
+# MEMO:
+# batch_size * steps = total number of the data
+# step size is defined by the batch size automatically
+# the step count is different between P100 and T4x2 because the batch size is different
+# how to define the batch size?
+# if I can define the batch size manually, the step size for the P100 and T4x2 will be the same
+# P100: 2553 steps, 2553 / 3 = 851 (steps), 6807 / 851 = 8  (batch size)
+# T4x2: 1278 steps, 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
+# epoch = the number of learning using the whole data

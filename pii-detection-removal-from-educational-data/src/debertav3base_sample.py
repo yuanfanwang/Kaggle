@@ -1,39 +1,34 @@
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments
-from datasets import load_dataset
+from transformers import AutoModelForTokenClassification, AutoTokenizer
 import torch
 
-dataset = load_dataset("ag_news")
-dataset["train"] = dataset["train"].select(range(10000))
+# モデルとトークナイザーの準備
+model = AutoModelForTokenClassification.from_pretrained("dbmdz/bert-large-cased-finetuned-conll03-english")
+tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
 
-tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+# クラス一覧
+label_list = [
+   "O",      
+   "B-MISC",  
+   "I-MISC", 
+   "B-PER", 
+   "I-PER",  
+   "B-ORG", 
+   "I-ORG", 
+   "B-LOC", 
+   "I-LOC" 
+]
 
-def tokenize_function(examples):
-    return tokenizer(examples["text"], padding="max_length", truncation=True)
+# テキスト
+sequence = "Hugging Face Inc. is a company based in New York City. Its headquarters are in DUMBO, therefore very" \
+          "close to the Manhattan Bridge."
 
-tokenized_dataset = dataset.map(tokenize_function, batched=True)
+# 前処理 (スペシャルトークンでトークンを取得)
+tokens = tokenizer.tokenize(tokenizer.decode(tokenizer.encode(sequence)))
+inputs = tokenizer.encode(sequence, return_tensors="pt")
 
-train_dataset = tokenized_dataset["train"]
-test_dataset = tokenized_dataset["test"]
+# 推論
+outputs = model(inputs)[0]
+predictions = torch.argmax(outputs, dim=2)
 
-model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=4)
-
-training_args = TrainingArguments("test_trainer", evaluation_strategy="epoch")
-trainer = Trainer(
-    model=model, args=training_args, train_dataset=train_dataset, eval_dataset=test_dataset
-)
-
-trainer.train()
-
-eval_results = trainer.evaluate()
-
-print(f"Eval results: {eval_results}")
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = model.to(device)
-input_text = "Text"
-input_data = tokenizer(input_text, return_tensors='pt').to(device)
-outputs = model(**input_data)
-predicted_class_idx = outputs.logits.argmax(-1).item()
-class_dict = {0: "World", 1: "Sports", 2: "Business", 3: "Science/Technology"}
-predicted_class_name = class_dict[predicted_class_idx]
-print(f"The input text is classified as: {predicted_class_name}")
+# 出力
+print([(token, label_list[prediction]) for token, prediction in zip(tokens, predictions[0].tolist())])
