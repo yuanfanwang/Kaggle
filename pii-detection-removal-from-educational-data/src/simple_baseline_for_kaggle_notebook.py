@@ -49,10 +49,10 @@ test_data = test_data.remove_columns(["document", "full_text", "tokens", "traili
 ##### Model
 # AutoModelForTokenClassification
 # https://huggingface.co/transformers/v3.0.2/model_doc/auto.html#transformers.AutoModelForTokenClassification
-
 model = AutoModelForTokenClassification.from_pretrained(model_name)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = model.to(device)
+
 
 ##### DataCollator
 data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
