@@ -2,36 +2,40 @@
 # (done)      epoch (the size is 3 as default?)
 # (done)      batch (fix the size as 8 or 16)
 
-# v0.2
+# v0.2:
+# AutoModelForTokenClassification
 # can labels be a list?
 
-# v0.2 TODO
+# v0.3:
 # the relation between the token size and the hidden size, currently the hidden size is 768
 # model_config
 # check why torch.cuda.empty_cache() doesn't work
 
-# v0.3
+# v0.4:
 # loss
 # metrics
 
-# v0.4 TODO:
+# v0.5:
 # fold, how to define the fold
 
-# v0.5 TODO:
+# v0.6:
 # change dummy labels to real labels
 # practical loss func
 # practical metrics func
 
 
-# v1.0 TODO:
+# v1.0:
 # sample submission
 
 
-# v2.0~ TODO:
+# v2.0:
 # create new dataset to train the model strongly
 # use google colab to train the model using devera-v3-xlarge
 # optuna?
 
+# v3.0:
+# parameter tuning
+# find the other model
 
 # MEMO:
 # batch_size * steps = total number of the data
