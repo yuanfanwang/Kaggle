@@ -4,7 +4,6 @@
 
 # v0.2:
 # AutoModelForTokenClassification
-# can labels be a list?
 
 # v0.3:
 # the relation between the token size and the hidden size, currently the hidden size is 768

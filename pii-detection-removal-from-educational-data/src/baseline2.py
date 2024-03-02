@@ -2,8 +2,8 @@ import sys
 
 import numpy as np
 import polars as pl
-
-from datasets import Dataset, DatasetDict
+from datasets import Dataset, DatasetDict, load_metric
+from huggingface_hub import notebook_login
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, AutoModelForTokenClassification, TrainingArguments, Trainer
 
 Local = True
@@ -34,15 +34,20 @@ label_names = [
     "I-STREET_ADDRESS",
 ]
 
-id2label = {i: label for i, label in enumerate(label_names)}
+id2label = {str(i): label for i, label in enumerate(label_names)}
 label2id = {label: i for i, label in enumerate(label_names)}
 
 def make_dataset():
     train_data = pl.read_json(data_path + "train.json").to_pandas()
     train_dataset = Dataset.from_pandas(train_data)
+    valid_dataset = train_dataset[:100]
     test_data = pl.read_json(data_path + "test.json").to_pandas()
     test_dataset = Dataset.from_pandas(test_data)
-    datasets = DatasetDict({"train": train_dataset, "test": test_dataset})
+    datasets = DatasetDict({
+        "train": train_dataset,
+        "validation": valid_dataset,
+        # "test": test_dataset
+    })
     return datasets
 
 def align_labels_with_tokens(labels, word_ids):
@@ -60,12 +65,12 @@ def align_labels_with_tokens(labels, word_ids):
             if label % 2 == 1:
                 label += 1
             new_labels.append(label)
+    return new_labels
 
 def tokenize_and_align_labels(examples):
     tokenized_inputs = tokenizer(
         examples["tokens"], truncation=True, is_split_into_words=True
     )
-
     if "labels" not in examples:
         return tokenized_inputs
 
@@ -90,3 +95,51 @@ tokenized_datasets = datasets.map(
     remove_columns=remove_columns,
 )
 
+
+data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
+metric = load_metric("seqeval")
+
+def compute_metrics(eval_preds):
+    logits, labels = eval_preds
+    predictions = np.argmax(logits, axis=-1)
+
+    true_labels = [[label_names[l] for l in label if l != -100] for label in labels]
+    true_predictions = [
+        [label_names[p] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions, labels)
+    ]
+    all_metrics = metric.compute(predictions=true_predictions, references=true_labels)
+    return {
+        "precision": all_metrics["overall_precision"],
+        "recall": all_metrics["overall_recall"],
+        "f1": all_metrics["overall_f1"],
+        "accuracy": all_metrics["overall_accuracy"],
+    }
+
+model = AutoModelForTokenClassification.from_pretrained(
+    model_checkpoint,
+    id2label=id2label,
+    label2id=label2id,
+)
+
+args = TrainingArguments(
+    "bert-finetune-ner",
+    evaluation_strategy="epoch",
+    save_strategy="epoch",
+    learning_rate=2e-5,
+    num_train_epochs=3,
+    weight_decay=0.01,
+    push_to_hub=False,
+)
+
+trainer = Trainer(
+    model=model,
+    args=args,
+    train_dataset=tokenized_datasets["train"],
+    eval_dataset=tokenized_datasets["validation"],
+    data_collator=data_collator,
+    compute_metrics=compute_metrics,
+    tokenizer=tokenizer,
+)
+
+trainer.train()
