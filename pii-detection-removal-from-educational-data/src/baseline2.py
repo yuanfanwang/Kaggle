@@ -1,4 +1,3 @@
-import GPUtil
 import sys
 import torch
 
@@ -10,14 +9,13 @@ from transformers import AutoTokenizer, DataCollatorForTokenClassification, Auto
 
 """
 !pip install seqeval
-!pip install GPUtil
 """
 
 torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-Local = False
+Local = True
 if Local:
     data_path = "data/"
 else:
@@ -47,6 +45,7 @@ label2id = {label: i for i, label in enumerate(label_names)}
 class CFG:
     data_size = 100
     batch_size = 1
+    token_max_length = 16
 
 def make_dataset():
     train_data = pl.read_json(data_path + "train.json").to_pandas()
@@ -81,7 +80,7 @@ def align_labels_with_tokens(labels, word_ids):
 
 def tokenize_and_align_labels(examples):
     tokenized_inputs = tokenizer(
-        examples["tokens"], truncation=True, is_split_into_words=True
+        examples["tokens"], truncation=True, is_split_into_words=True, max_length=CFG.token_max_length
     )
     if "labels" not in examples:
         return tokenized_inputs
@@ -106,7 +105,6 @@ tokenized_datasets = datasets.map(
     batched=True,
     remove_columns=remove_columns,
 )
-
 
 data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
 metric = load_metric("seqeval")
@@ -169,7 +167,4 @@ trainer = Trainer(
 trainer.train()
 
 # how to make F beta score as the loss function
-# precision recall f1 accuracy はなんのデータを用いてどのように学習されたモデルがなんのデータを用いて評価したものか
-# input (tokenなど) のmax_lengthを適切に設定して、labelとの整合性を保つ
-    # warn: Asking to truncate to max_length but no maximum length is provided and the model has no predefined maximum length. Default to no truncation.
-# Training Loss はどのようにして計算されたのか
+# Training Loss はなんの関数を使って計算されたのか
