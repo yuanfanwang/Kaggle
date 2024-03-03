@@ -1,9 +1,9 @@
 # v0.1 TODO:
-# (done)      epoch (the size is 3 as default?)
-# (done)      batch (fix the size as 8 or 16)
+# (done)        epoch (the size is 3 as default?)
+# (done)        batch (fix the size as 8 or 16)
 
 # v0.2:
-# AutoModelForTokenClassification
+# (done)        AutoModelForTokenClassification
 
 # v0.3:
 # the relation between the token size and the hidden size, currently the hidden size is 768
@@ -11,17 +11,16 @@
 # check why torch.cuda.empty_cache() doesn't work
 
 # v0.4:
+# (done)        metrics
 # loss
-# metrics
 
 # v0.5:
 # fold, how to define the fold
 
 # v0.6:
-# change dummy labels to real labels
+# (done)        change dummy labels to real labels
+# (done)        practical metrics func
 # practical loss func
-# practical metrics func
-
 
 # v1.0:
 # sample submission
@@ -45,3 +44,5 @@
 # P100: 2553 steps, 2553 / 3 = 851 (steps), 6807 / 851 = 8  (batch size)
 # T4x2: 1278 steps, 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
 # epoch = the number of learning using the whole data
+
+# T4x2: 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
