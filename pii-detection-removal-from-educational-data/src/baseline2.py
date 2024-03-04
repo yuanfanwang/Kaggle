@@ -132,11 +132,7 @@ def compute_metrics(eval_preds):
     }
 
 model = AutoModelForTokenClassification.from_pretrained(
-    model_checkpoint,
-    id2label=id2label,
-    label2id=label2id,
-)
-model = model.to(device)
+    model_checkpoint, id2label=id2label, label2id=label2id).to(device)
 
 args = TrainingArguments(
     output_dir="bert-finetune-ner",

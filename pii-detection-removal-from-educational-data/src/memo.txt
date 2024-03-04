@@ -6,21 +6,8 @@
 # (done)        AutoModelForTokenClassification
 
 # v0.3:
-# the relation between the token size and the hidden size, currently the hidden size is 768
-# model_config
-# check why torch.cuda.empty_cache() doesn't work
+# fold, how to define the fold, cross validation
 
-# v0.4:
-# (done)        metrics
-# loss
-
-# v0.5:
-# fold, how to define the fold
-
-# v0.6:
-# (done)        change dummy labels to real labels
-# (done)        practical metrics func
-# practical loss func
 
 # v1.0:
 # sample submission
@@ -31,8 +18,10 @@
 # use google colab to train the model using devera-v3-xlarge
 # optuna?
 
+
 # v3.0:
 # parameter tuning
+# find the best loss func for the evaluation func F5
 # find the other model
 
 # MEMO:
