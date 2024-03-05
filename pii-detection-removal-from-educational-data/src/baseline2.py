@@ -3,8 +3,11 @@ import torch
 
 import numpy as np
 import polars as pl
+
 from datasets import Dataset, DatasetDict, load_metric
 from huggingface_hub import notebook_login
+from sklearn.model_selection import GroupKFold
+from tqdm import tqdm
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, AutoModelForTokenClassification, TrainingArguments, Trainer
 
 """
@@ -15,7 +18,7 @@ torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-Local = True
+Local = False
 if Local:
     data_path = "data/"
 else:
@@ -46,6 +49,7 @@ class CFG:
     data_size = 100
     batch_size = 1
     token_max_length = 16
+    fold = 5
 
 def make_dataset():
     train_data = pl.read_json(data_path + "train.json").to_pandas()
@@ -106,6 +110,18 @@ tokenized_datasets = datasets.map(
     remove_columns=remove_columns,
 )
 
+def add_fold_column(example):
+    # just want to know the length of the example to add fold column
+    eg_len = len(example['input_ids'])
+    folds = np.random.randint(0, CFG.fold, eg_len)
+    example['fold'] = folds
+    return example
+
+tokenized_datasets = tokenized_datasets.map(
+    add_fold_column,
+    batched=True,
+)
+
 data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
 metric = load_metric("seqeval")
 
@@ -131,36 +147,44 @@ def compute_metrics(eval_preds):
         "accuracy": all_metrics["overall_accuracy"],
     }
 
-model = AutoModelForTokenClassification.from_pretrained(
-    model_checkpoint, id2label=id2label, label2id=label2id).to(device)
 
-args = TrainingArguments(
-    output_dir="bert-finetune-ner",
-    evaluation_strategy="epoch",
-    # evaluation_strategy="steps",
-    # eval_steps=10,
-    save_strategy="epoch",
-    per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
-    per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-    learning_rate=2e-5,
-    num_train_epochs=3,
-    weight_decay=0.01,
-    push_to_hub=False,
-    report_to="none",
-    log_level="error",
-)
+gkf = GroupKFold(n_splits=CFG.fold)
+gkf_dataset = gkf.split(X=tokenized_datasets['train'],
+                        y=tokenized_datasets['train']['labels'],
+                        groups=tokenized_datasets['train']['fold'])
+for i, (train_index, valid_index) in enumerate(gkf_dataset):
+    print(f"\nFold {i}")
+    train_dataset = tokenized_datasets['train'].select(train_index)    
+    valid_dataset = tokenized_datasets['train'].select(valid_index)
 
-trainer = Trainer(
-    model=model,
-    args=args,
-    train_dataset=tokenized_datasets["train"],
-    eval_dataset=tokenized_datasets["validation"],
-    data_collator=data_collator,
-    compute_metrics=compute_metrics,
-    tokenizer=tokenizer,
-)
+    model = AutoModelForTokenClassification.from_pretrained(
+        model_checkpoint, id2label=id2label, label2id=label2id).to(device)
 
-trainer.train()
+    args = TrainingArguments(
+        disable_tqdm=False,
+        output_dir=f"bert-finetune-ner_{i}",
+        evaluation_strategy="epoch",
+        # evaluation_strategy="steps",
+        # eval_steps=10,
+        save_strategy="no",
+        per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
+        per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
+        learning_rate=2e-5,
+        num_train_epochs=3,
+        weight_decay=0.01,
+        push_to_hub=False,
+        report_to="none",
+        log_level="error",
+    )
 
-# how to make F beta score as the loss function
-# Training Loss はなんの関数を使って計算されたのか
+    trainer = Trainer(
+        model=model,
+        args=args,
+        train_dataset=train_dataset,
+        eval_dataset=valid_dataset,
+        data_collator=data_collator,
+        compute_metrics=compute_metrics,
+        tokenizer=tokenizer,
+    )
+
+    trainer.train()
