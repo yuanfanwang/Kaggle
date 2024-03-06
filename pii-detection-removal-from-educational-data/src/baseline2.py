@@ -18,7 +18,7 @@ torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-Local = True
+Local = False
 if Local:
     data_path = "data/"
 else:
@@ -202,10 +202,24 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
     # train model
     trainer.train()
 
+    # evaluate model with valid dataset
     eval_result = trainer.evaluate()
+    try:
+        # print(eval_result)
+        print(eval_result['eval_f5'])
+    except:
+        print("f5 not fould")
 
     # predict test dataset
-    trainer.predict()
+    prediction = trainer.predict(tokenized_datasets['test'])  # PredictionOutput Object
+    try:
+        # print(prediction)
+        print(prediction.predictions.shape)  # (10, 16, 15)
+                                             # (10 test data, the length of tokens in a test data is 16, Probability that each token is each label whcich number is 15)
+
+    except:
+        print("predictions not found")
+
 
 # use all model produced by each fold to predict the train dataset
 
