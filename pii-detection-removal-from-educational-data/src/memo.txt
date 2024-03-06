@@ -13,14 +13,18 @@
 # (done)        enable to use test_dataset
 
 # v0.5:
-# sum up the result of each fold
-# decode the prediction to the original format
+# (done)        decode the prediction to the original format
 
 # v0.6:
-# save model to reuse?
+# submit max F5 socre model
 
 # v1.0:
 # sample submission
+
+# v1.1:
+# avarage the result of each fold
+# weighted avarage the result of each fold
+# input min, av, max, std to LGBM
 
 # v2.0:
 # trailing_whitespace

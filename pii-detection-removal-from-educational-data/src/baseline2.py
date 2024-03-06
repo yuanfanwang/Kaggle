@@ -2,6 +2,7 @@ import sys
 import torch
 
 import numpy as np
+import pandas as pd
 import polars as pl
 
 from datasets import Dataset, DatasetDict, load_metric
@@ -12,6 +13,12 @@ from transformers import AutoTokenizer, DataCollatorForTokenClassification, Auto
 
 """
 !pip install seqeval
+"""
+
+""" memo
+# input_ids 1, 2 が trainer.evaluate() でどのように評価されるか
+# whitespace, " ", "\n\n" などの対応
+# seed 固定
 """
 
 torch.cuda.empty_cache()
@@ -46,10 +53,10 @@ id2label = {str(i): label for i, label in enumerate(label_names)}
 label2id = {label: i for i, label in enumerate(label_names)}
 
 class CFG:
-    data_size = 100
+    # data_size = 1000
     batch_size = 1
-    token_max_length = 16
-    fold = 5
+    token_max_length = 2500  # 2500 ~ 5000
+    fold = 4
 
 def align_labels_with_tokens(labels, word_ids):
     new_labels = []
@@ -69,25 +76,21 @@ def align_labels_with_tokens(labels, word_ids):
     return new_labels
 
 def tokenize_and_align_labels(examples):
+    # tokenize
     tokenized_inputs = tokenizer(
         examples["tokens"], truncation=True, is_split_into_words=True, max_length=CFG.token_max_length
     )
-    # return when it is test dataset
-    if "labels" not in examples:
-        return tokenized_inputs
+    word_ids = [tokenized_inputs.word_ids(i) for i in range(len(tokenized_inputs["input_ids"]))]
+    tokenized_inputs["word_ids"] = word_ids
 
+    # return when it is test dataset
+    if "labels" not in examples: return tokenized_inputs
+
+    # modify labels for train data
     all_labels = examples["labels"]
     new_labels = []
     for i, labels in enumerate(all_labels):
         word_ids = tokenized_inputs.word_ids(i)
-        # debug
-            # tokens = examples["tokens"][i]
-            # input_ids = tokenized_inputs["input_ids"][i]
-            # print('')
-            # print(tokens[:16])
-            # print(input_ids)
-            # print([tokenizer.decode(id) for id in input_ids])
-            # print(word_ids)
         labels = [label2id[label] for label in labels]
         new_labels.append(align_labels_with_tokens(labels, word_ids))
     tokenized_inputs["labels"] = new_labels
@@ -105,7 +108,7 @@ def add_fold_column(example):
 
 def make_dataset():
     train_data = pl.read_json(data_path + "train.json").to_pandas()
-    train_data = train_data[:CFG.data_size]
+    # train_data = train_data[:CFG.data_size]
     train_dataset = Dataset.from_pandas(train_data)
     test_data = pl.read_json(data_path + "test.json").to_pandas()
     test_dataset = Dataset.from_pandas(test_data)
@@ -114,12 +117,9 @@ def make_dataset():
         "test": test_dataset
     })
 
-    remove_columns = datasets["train"].column_names
-    remove_columns.remove('labels')
     datasets = datasets.map(
         tokenize_and_align_labels,
         batched=True,
-        remove_columns=remove_columns,
     )
 
     datasets = datasets.map(
@@ -132,7 +132,7 @@ def make_dataset():
 
 tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 tokenized_datasets = make_dataset()
-
+print(tokenized_datasets)
 
 data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
 metric = load_metric("seqeval")
@@ -159,7 +159,9 @@ def compute_metrics(eval_preds):
         "accuracy": all_metrics["overall_accuracy"],
     }
 
-# Train the model
+
+best_f5_score = -1.0
+best_trainer = None
 gkf = GroupKFold(n_splits=CFG.fold)
 gkf_dataset = gkf.split(X=tokenized_datasets['train'],
                         y=tokenized_datasets['train']['labels'],
@@ -178,6 +180,7 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
         evaluation_strategy="epoch",
         # evaluation_strategy="steps",
         # eval_steps=10,
+        # fp16=True,
         save_strategy="no",
         per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
         per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
@@ -204,24 +207,40 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
 
     # evaluate model with valid dataset
     eval_result = trainer.evaluate()
-    try:
-        # print(eval_result)
-        print(eval_result['eval_f5'])
-    except:
-        print("f5 not fould")
+    print(eval_result['eval_f5'])
+    prediction = trainer.predict(tokenized_datasets['test'])
+    label_predictions = np.argmax(prediction.predictions, axis=-1)
+    if best_f5_score < eval_result['eval_f5']:
+        best_f5_score = eval_result['eval_f5']
+        best_trainer = trainer
 
-    # predict test dataset
-    prediction = trainer.predict(tokenized_datasets['test'])  # PredictionOutput Object
-    try:
-        # print(prediction)
-        print(prediction.predictions.shape)  # (10, 16, 15)
-                                             # (10 test data, the length of tokens in a test data is 16, Probability that each token is each label whcich number is 15)
+test_datasets = tokenized_datasets['test']
+prediction = best_trainer.predict(test_datasets)  # PredictionOutput Object
+label_predictions = np.argmax(prediction.predictions, axis=-1)  # (10, 16)
 
-    except:
-        print("predictions not found")
+submisson = pd.DataFrame(columns=["row_id", "document", "token", "label"])
+row_id = 0
+for i, labels in enumerate(label_predictions):
+    word_ids = test_datasets['word_ids'][i]
+    document = test_datasets['document'][i]
+    current_id = None
 
+    if (len(labels) != len(word_ids)):
+        raise ValueError("The length of labels and word_ids is different")
 
-# use all model produced by each fold to predict the train dataset
+    for j, label_idx in enumerate(labels):
+        if j == 0 or j == len(labels) - 1: continue
+        if current_id != word_ids[j]:
+            current_id = word_ids[j]
+            if label_idx != 0:
+                new_row = pd.DataFrame({
+                    "row_id": row_id,
+                    "document": document,
+                    "token": word_ids[j],
+                    "label": label_names[label_idx] 
+                }, index=[0])
+                submisson = pd.concat([submisson, new_row], ignore_index=True)
+                row_id += 1
 
-
-# use all model produced by each fold to predict the test dataset
+print(submisson.head())
+submisson.to_csv("submission.csv", index=False)
