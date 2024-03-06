@@ -18,7 +18,7 @@ torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-Local = False
+Local = True
 if Local:
     data_path = "data/"
 else:
@@ -51,20 +51,6 @@ class CFG:
     token_max_length = 16
     fold = 5
 
-def make_dataset():
-    train_data = pl.read_json(data_path + "train.json").to_pandas()
-    train_data = train_data[:CFG.data_size]
-    train_dataset = Dataset.from_pandas(train_data)
-    valid_dataset = train_dataset
-    test_data = pl.read_json(data_path + "test.json").to_pandas()
-    test_dataset = Dataset.from_pandas(test_data)
-    datasets = DatasetDict({
-        "train": train_dataset,
-        "validation": valid_dataset,
-        # "test": test_dataset
-    })
-    return datasets
-
 def align_labels_with_tokens(labels, word_ids):
     new_labels = []
     current_word = None
@@ -86,6 +72,7 @@ def tokenize_and_align_labels(examples):
     tokenized_inputs = tokenizer(
         examples["tokens"], truncation=True, is_split_into_words=True, max_length=CFG.token_max_length
     )
+    # return when it is test dataset
     if "labels" not in examples:
         return tokenized_inputs
 
@@ -93,34 +80,59 @@ def tokenize_and_align_labels(examples):
     new_labels = []
     for i, labels in enumerate(all_labels):
         word_ids = tokenized_inputs.word_ids(i)
+        # debug
+            # tokens = examples["tokens"][i]
+            # input_ids = tokenized_inputs["input_ids"][i]
+            # print('')
+            # print(tokens[:16])
+            # print(input_ids)
+            # print([tokenizer.decode(id) for id in input_ids])
+            # print(word_ids)
         labels = [label2id[label] for label in labels]
         new_labels.append(align_labels_with_tokens(labels, word_ids))
     tokenized_inputs["labels"] = new_labels
     return tokenized_inputs
 
-tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
-datasets = make_dataset()
-
-remove_columns = datasets["train"].column_names
-remove_columns.remove('labels')
-
-tokenized_datasets = datasets.map(
-    tokenize_and_align_labels,
-    batched=True,
-    remove_columns=remove_columns,
-)
-
 def add_fold_column(example):
+    # return when it is test dataset
+    if 'labels' not in example: return example
     # just want to know the length of the example to add fold column
     eg_len = len(example['input_ids'])
     folds = np.random.randint(0, CFG.fold, eg_len)
     example['fold'] = folds
     return example
 
-tokenized_datasets = tokenized_datasets.map(
-    add_fold_column,
-    batched=True,
-)
+
+def make_dataset():
+    train_data = pl.read_json(data_path + "train.json").to_pandas()
+    train_data = train_data[:CFG.data_size]
+    train_dataset = Dataset.from_pandas(train_data)
+    test_data = pl.read_json(data_path + "test.json").to_pandas()
+    test_dataset = Dataset.from_pandas(test_data)
+    datasets = DatasetDict({
+        "train": train_dataset,
+        "test": test_dataset
+    })
+
+    remove_columns = datasets["train"].column_names
+    remove_columns.remove('labels')
+    datasets = datasets.map(
+        tokenize_and_align_labels,
+        batched=True,
+        remove_columns=remove_columns,
+    )
+
+    datasets = datasets.map(
+        add_fold_column,
+        batched=True,
+    )
+
+    return datasets
+
+
+tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
+tokenized_datasets = make_dataset()
+
 
 data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
 metric = load_metric("seqeval")
@@ -147,7 +159,7 @@ def compute_metrics(eval_preds):
         "accuracy": all_metrics["overall_accuracy"],
     }
 
-
+# Train the model
 gkf = GroupKFold(n_splits=CFG.fold)
 gkf_dataset = gkf.split(X=tokenized_datasets['train'],
                         y=tokenized_datasets['train']['labels'],
@@ -187,4 +199,15 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
         tokenizer=tokenizer,
     )
 
+    # train model
     trainer.train()
+
+    eval_result = trainer.evaluate()
+
+    # predict test dataset
+    trainer.predict()
+
+# use all model produced by each fold to predict the train dataset
+
+
+# use all model produced by each fold to predict the test dataset

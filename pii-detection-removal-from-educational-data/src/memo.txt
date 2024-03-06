@@ -10,14 +10,19 @@
 
 # v0.4:
 # train_by_fold, validate, predict
+# (done)        enable to use test_dataset
+# decode the prediction to the original format
 
-
+# v0.5
+# save model to reuse?
+# 
 
 # v1.0:
 # sample submission
 
 # v2.0:
 # trailing_whitespace
+# /n/n -> to some special token like [KAIGYO]
 # parameter tuning (optuna)
 # find the best loss func for the evaluation func F5
 
