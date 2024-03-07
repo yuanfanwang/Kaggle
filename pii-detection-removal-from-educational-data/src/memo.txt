@@ -16,10 +16,10 @@
 # (done)        decode the prediction to the original format
 
 # v0.6:
-# submit max F5 socre model
+# (done)        submit max F5 socre model
 
 # v1.0:
-# sample submission
+# (done)        sample submission
 
 # v1.1:
 # avarage the result of each fold

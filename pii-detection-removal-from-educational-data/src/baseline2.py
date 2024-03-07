@@ -1,3 +1,7 @@
+"""
+!pip install "/kaggle/input/seqeval/seqeval-1.2.2-py3-none-any.whl"
+"""
+
 import sys
 import torch
 
@@ -10,15 +14,14 @@ from huggingface_hub import notebook_login
 from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, AutoModelForTokenClassification, TrainingArguments, Trainer
+from seqeval.metrics import precision_score, recall_score, accuracy_score, f1_score
 
-"""
-!pip install seqeval
-"""
 
 """ memo
 # input_ids 1, 2 が trainer.evaluate() でどのように評価されるか
 # whitespace, " ", "\n\n" などの対応
 # seed 固定
+# seperate a long token
 """
 
 torch.cuda.empty_cache()
@@ -31,7 +34,7 @@ if Local:
 else:
     data_path = "/kaggle/input/pii-detection-removal-from-educational-data/"
 
-model_checkpoint = "microsoft/deberta-v3-base"
+model_checkpoint = "/kaggle/input/debertav3base"
 label_names = [
     "O",
     "B-NAME_STUDENT",
@@ -57,6 +60,7 @@ class CFG:
     batch_size = 1
     token_max_length = 2500  # 2500 ~ 5000
     fold = 4
+    epoch = 3
 
 def align_labels_with_tokens(labels, word_ids):
     new_labels = []
@@ -132,10 +136,8 @@ def make_dataset():
 
 tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 tokenized_datasets = make_dataset()
-print(tokenized_datasets)
 
 data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
-metric = load_metric("seqeval")
 
 def f_score(precision, recall, beta=1):
     epsilon = 1e-7
@@ -150,13 +152,12 @@ def compute_metrics(eval_preds):
         [label_names[p] for (p, l) in zip(prediction, label) if l != -100]
         for prediction, label in zip(predictions, labels)
     ]
-    all_metrics = metric.compute(predictions=true_predictions, references=true_labels)
     return {
-        "precision": all_metrics["overall_precision"],
-        "recall": all_metrics["overall_recall"],
-        "f1": all_metrics["overall_f1"],
-        "f5": f_score(all_metrics["overall_precision"], all_metrics["overall_recall"], 5),
-        "accuracy": all_metrics["overall_accuracy"],
+        "precision": precision_score(true_labels, true_predictions),
+        "recall": recall_score(true_labels, true_predictions),
+        "f1": f1_score(true_labels, true_predictions),
+        "f5": f_score(precision_score(true_labels, true_predictions), recall_score(true_labels, true_predictions), 5),
+        "accuracy": accuracy_score(true_labels, true_predictions),
     }
 
 
@@ -185,7 +186,7 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
         per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
         per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
         learning_rate=2e-5,
-        num_train_epochs=3,
+        num_train_epochs=CFG.epoch,
         weight_decay=0.01,
         push_to_hub=False,
         report_to="none",
