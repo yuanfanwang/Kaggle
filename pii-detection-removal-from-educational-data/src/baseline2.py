@@ -80,7 +80,6 @@ def align_labels_with_tokens(labels, word_ids):
     return new_labels
 
 def tokenize_and_align_labels(examples):
-    # tokenize
     tokenized_inputs = tokenizer(
         examples["tokens"], truncation=True, is_split_into_words=True, max_length=CFG.token_max_length
     )
@@ -226,19 +225,16 @@ for i, labels in enumerate(label_predictions):
     document = test_datasets['document'][i]
     current_id = None
 
-    if (len(labels) != len(word_ids)):
-        raise ValueError("The length of labels and word_ids is different")
-
-    for j, label_idx in enumerate(labels):
-        if j == 0 or j == len(labels) - 1: continue
-        if current_id != word_ids[j]:
-            current_id = word_ids[j]
-            if label_idx != 0:
+    for pii_idx, word_id in zip(labels, word_ids):
+        if word_id == None: continue
+        if current_id != word_id:
+            current_id = word_id
+            if pii_idx != 0:
                 new_row = pd.DataFrame({
                     "row_id": row_id,
                     "document": document,
-                    "token": word_ids[j],
-                    "label": label_names[label_idx] 
+                    "token": word_id,
+                    "label": label_names[pii_idx] 
                 }, index=[0])
                 submission = pd.concat([submission, new_row], ignore_index=True)
                 row_id += 1
