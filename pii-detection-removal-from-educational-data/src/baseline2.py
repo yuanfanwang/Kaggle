@@ -58,9 +58,9 @@ label2id = {label: i for i, label in enumerate(label_names)}
 class CFG:
     # data_size = 1000
     batch_size = 1
-    token_max_length = 2500  # 2500 ~ 5000
-    fold = 4
+    token_max_length = 1024
     epoch = 3
+    fold = 4
 
 def align_labels_with_tokens(labels, word_ids):
     new_labels = []
@@ -219,7 +219,7 @@ test_datasets = tokenized_datasets['test']
 prediction = best_trainer.predict(test_datasets)  # PredictionOutput Object
 label_predictions = np.argmax(prediction.predictions, axis=-1)  # (10, 16)
 
-submisson = pd.DataFrame(columns=["row_id", "document", "token", "label"])
+submission = pd.DataFrame(columns=["row_id", "document", "token", "label"])
 row_id = 0
 for i, labels in enumerate(label_predictions):
     word_ids = test_datasets['word_ids'][i]
@@ -240,8 +240,8 @@ for i, labels in enumerate(label_predictions):
                     "token": word_ids[j],
                     "label": label_names[label_idx] 
                 }, index=[0])
-                submisson = pd.concat([submisson, new_row], ignore_index=True)
+                submission = pd.concat([submission, new_row], ignore_index=True)
                 row_id += 1
 
-print(submisson.head())
-submisson.to_csv("submission.csv", index=False)
+print(submission.head())
+submission.to_csv("submission.csv", index=False)
