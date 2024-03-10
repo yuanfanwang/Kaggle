@@ -56,7 +56,7 @@ id2label = {str(i): label for i, label in enumerate(label_names)}
 label2id = {label: i for i, label in enumerate(label_names)}
 
 class CFG:
-    # data_size = 1000
+    sample_data_size = 1000
     batch_size = 1
     token_max_length = 1024
     epoch = 3
@@ -111,7 +111,7 @@ def add_fold_column(example):
 
 def make_dataset():
     train_df = pl.read_json(data_path + "train.json").to_pandas()
-    # train_data = train_data[:CFG.data_size]
+    # train_df = train_df[:CFG.sample_data_size]
     train_dataset = Dataset.from_pandas(train_df)
     test_df = pl.read_json(data_path + "test.json").to_pandas()
     test_dataset = Dataset.from_pandas(test_df)
@@ -177,9 +177,9 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
     args = TrainingArguments(
         disable_tqdm=False,
         output_dir=f"bert-finetune-ner_{i}",
-        evaluation_strategy="epoch",
-        # evaluation_strategy="steps",
-        # eval_steps=10,
+        # evaluation_strategy="epoch",
+        evaluation_strategy="steps",
+        eval_steps=1000,
         # fp16=True,
         save_strategy="no",
         per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
