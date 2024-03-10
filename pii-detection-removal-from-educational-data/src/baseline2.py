@@ -110,11 +110,11 @@ def add_fold_column(example):
 
 
 def make_dataset():
-    train_data = pl.read_json(data_path + "train.json").to_pandas()
+    train_df = pl.read_json(data_path + "train.json").to_pandas()
     # train_data = train_data[:CFG.data_size]
-    train_dataset = Dataset.from_pandas(train_data)
-    test_data = pl.read_json(data_path + "test.json").to_pandas()
-    test_dataset = Dataset.from_pandas(test_data)
+    train_dataset = Dataset.from_pandas(train_df)
+    test_df = pl.read_json(data_path + "test.json").to_pandas()
+    test_dataset = Dataset.from_pandas(test_df)
     datasets = DatasetDict({
         "train": train_dataset,
         "test": test_dataset
@@ -205,39 +205,48 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
     # train model
     trainer.train()
 
-    # evaluate model with valid dataset
+    # evaluate model with valid dataset to get the best model
     eval_result = trainer.evaluate()
-    print(eval_result['eval_f5'])
-    prediction = trainer.predict(tokenized_datasets['test'])
-    label_predictions = np.argmax(prediction.predictions, axis=-1)
+    print(f"f5: {eval_result['eval_f5']}")
+
+    # TODO: for ansamble (but this process takes about 20min if the size of the test dataset is 20,000.)
+    # prediction = trainer.predict(tokenized_datasets['test'])
+    # label_predictions = np.argmax(prediction.predictions, axis=-1)
+
     if best_f5_score < eval_result['eval_f5']:
         best_f5_score = eval_result['eval_f5']
         best_trainer = trainer
 
-test_datasets = tokenized_datasets['test']
-prediction = best_trainer.predict(test_datasets)  # PredictionOutput Object
-label_predictions = np.argmax(prediction.predictions, axis=-1)  # (10, 16)
 
-submission = pd.DataFrame(columns=["row_id", "document", "token", "label"])
-row_id = 0
+# predict labels 
+test_datasets     = tokenized_datasets['test']
+prediction        = best_trainer.predict(test_datasets)  # PredictionOutput Object
+label_predictions = np.argmax(prediction.predictions, axis=-1)  # (data_size, token max length)
+
+# create submission file
+row_id_sub, document_sub, token_sub, label_sub = [], [], [], []
+test_df = pd.DataFrame(test_datasets)
 for i, labels in enumerate(label_predictions):
-    word_ids = test_datasets['word_ids'][i]
-    document = test_datasets['document'][i]
+    word_ids = test_df.at[i, 'word_ids']
+    document = test_df.at[i, 'document']
     current_id = None
-
-    for pii_idx, word_id in zip(labels, word_ids):
+    for j, (pii_idx, word_id) in enumerate(zip(labels, word_ids)):
         if word_id == None: continue
         if current_id != word_id:
             current_id = word_id
             if pii_idx != 0:
-                new_row = pd.DataFrame({
-                    "row_id": row_id,
-                    "document": document,
-                    "token": word_id,
-                    "label": label_names[pii_idx] 
-                }, index=[0])
-                submission = pd.concat([submission, new_row], ignore_index=True)
-                row_id += 1
+                row_id_sub.append(len(row_id_sub))
+                document_sub.append(document)
+                token_sub.append(word_id)
+                label_sub.append(label_names[pii_idx])
 
+submission = {
+    'row_id': row_id_sub,
+    'document': document_sub,
+    'token': token_sub,
+    'label': label_sub
+}
+
+submission = pd.DataFrame(submission)
 print(submission.head())
 submission.to_csv("submission.csv", index=False)
