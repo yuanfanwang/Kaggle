@@ -17,10 +17,26 @@ from transformers import AutoTokenizer, DataCollatorForTokenClassification, Auto
 from seqeval.metrics import precision_score, recall_score, accuracy_score, f1_score
 
 
+# set random seed
+def seed_everything(seed: int):
+    import random, os
+    import numpy as np
+    import torch
+    
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
+    
+seed_everything(seed=42)
+
+
 """ memo
 # input_ids 1, 2 が trainer.evaluate() でどのように評価されるか
 # whitespace, " ", "\n\n" などの対応
-# seed 固定
 # seperate a long token
 """
 

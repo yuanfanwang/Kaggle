@@ -21,25 +21,37 @@
 # v1.0:
 # (done)        sample submission
 
-# v1.1:
+
+# v1.1
+# sepertate long token
+
+
+# v2.0:
+# use google colab to train the model using devera-v3-xlarge
+# find the best loss func for the evaluation func F5
+
+
+# v3.0:
+# parameter tuning (optuna)
+
+
+# v4.0:
+# trailing_whitespace
+# /n/n -> to some special token like [KAIGYO]
 # avarage the result of each fold
 # weighted avarage the result of each fold
 # input min, av, max, std to LGBM
 
-# v2.0:
-# trailing_whitespace
-# /n/n -> to some special token like [KAIGYO]
-# parameter tuning (optuna)
-# find the best loss func for the evaluation func F5
 
-# v3.0:
-# use google colab to train the model using devera-v3-xlarge
-
-# v4.0:
+# v5.0:
 # create new dataset to train the model strongly
 
 
-# v5.0:
+# v6.0:
+# optuna again
+
+
+# v7.0:
 # find the other model to fusion the model
 
 
