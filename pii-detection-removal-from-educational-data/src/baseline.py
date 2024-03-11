@@ -88,6 +88,7 @@ def align_labels_with_tokens(labels, word_ids):
             new_labels.append(label)
     return new_labels
 
+
 def tokenize_and_align_labels(examples):
     tokenized_inputs = tokenizer(
         examples["tokens"], truncation=True, is_split_into_words=True, max_length=CFG.token_max_length
@@ -108,6 +109,7 @@ def tokenize_and_align_labels(examples):
     tokenized_inputs["labels"] = new_labels
     return tokenized_inputs
 
+
 def add_fold_column(example):
     # return when it is test dataset
     if 'labels' not in example: return example
@@ -116,6 +118,7 @@ def add_fold_column(example):
     folds = np.random.randint(0, CFG.fold, eg_len)
     example['fold'] = folds
     return example
+
 
 def make_dataset():
     train_df = pl.read_json(data_path + "train.json").to_pandas()
@@ -143,12 +146,13 @@ def make_dataset():
 
 tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 tokenized_datasets = make_dataset()
-
 data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
+
 
 def f_score(precision, recall, beta=1):
     epsilon = 1e-7
     return (1 + beta ** 2) * (precision * recall) / (beta ** 2 * precision + recall + epsilon)
+
 
 def compute_metrics(eval_preds):
     logits, labels = eval_preds
