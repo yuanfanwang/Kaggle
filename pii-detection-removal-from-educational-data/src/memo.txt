@@ -1,30 +1,8 @@
-# v0.1 TODO:
-# (done)        epoch (the size is 3 as default?)
-# (done)        batch (fix the size as 8 or 16)
-
-# v0.2:
-# (done)        AutoModelForTokenClassification
-
-# v0.3:
-# (done)        fold, how to define the fold, cross validation
-
-# v0.4:
-# (done)        train_by_fold, validate, predict
-# (done)        enable to use test_dataset
-
-# v0.5:
-# (done)        decode the prediction to the original format
-
-# v0.6:
-# (done)        submit max F5 socre model
-
-# v1.0:
-# (done)        sample submission
-
-
-# v1.1
+# v1.0
+# trailing_whitespace
+# add token_id
 # sepertate long token
-
+# read discussion and find tips then make decision to improve the model
 
 # v2.0:
 # use google colab to train the model using devera-v3-xlarge
@@ -36,7 +14,6 @@
 
 
 # v4.0:
-# trailing_whitespace
 # /n/n -> to some special token like [KAIGYO]
 # " " -> to some special token like [SPACE] ?
 # avarage the result of each fold
