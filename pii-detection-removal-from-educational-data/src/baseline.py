@@ -2,6 +2,9 @@
 !pip install "/kaggle/input/seqeval/seqeval-1.2.2-py3-none-any.whl"
 """
 
+
+import os
+import random
 import sys
 import torch
 
@@ -9,20 +12,22 @@ import numpy as np
 import pandas as pd
 import polars as pl
 
-from datasets import Dataset, DatasetDict, load_metric
-from huggingface_hub import notebook_login
+from datasets import Dataset, DatasetDict
 from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, AutoModelForTokenClassification, TrainingArguments, Trainer
 from seqeval.metrics import precision_score, recall_score, accuracy_score, f1_score
 
 
+class CFG:
+    sample_data_size = 1000
+    batch_size = 1
+    token_max_length = 1024
+    epoch = 3
+    fold = 4
+
 # set random seed
 def seed_everything(seed: int):
-    import random, os
-    import numpy as np
-    import torch
-    
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
@@ -30,19 +35,13 @@ def seed_everything(seed: int):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
-    
+
+# initialize
 seed_everything(seed=42)
-
-
-""" memo
-# input_ids 1, 2 が trainer.evaluate() でどのように評価されるか
-# whitespace, " ", "\n\n" などの対応
-# seperate a long token
-"""
-
 torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 Local = False
 if Local:
@@ -71,12 +70,6 @@ label_names = [
 id2label = {str(i): label for i, label in enumerate(label_names)}
 label2id = {label: i for i, label in enumerate(label_names)}
 
-class CFG:
-    sample_data_size = 1000
-    batch_size = 1
-    token_max_length = 1024
-    epoch = 3
-    fold = 4
 
 def align_labels_with_tokens(labels, word_ids):
     new_labels = []
@@ -123,7 +116,6 @@ def add_fold_column(example):
     folds = np.random.randint(0, CFG.fold, eg_len)
     example['fold'] = folds
     return example
-
 
 def make_dataset():
     train_df = pl.read_json(data_path + "train.json").to_pandas()

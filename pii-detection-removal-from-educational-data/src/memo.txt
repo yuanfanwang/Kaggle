@@ -38,6 +38,7 @@
 # v4.0:
 # trailing_whitespace
 # /n/n -> to some special token like [KAIGYO]
+# " " -> to some special token like [SPACE] ?
 # avarage the result of each fold
 # weighted avarage the result of each fold
 # input min, av, max, std to LGBM
