@@ -1,49 +1,56 @@
-# v1.0
-# trailing_whitespace
-# add token_id
-# sepertate long token
-# read discussion and find tips then make decision to improve the model
+v1.2
+trailing_whitespace
 
-# v2.0:
-# use google colab to train the model using devera-v3-xlarge
-# find the best loss func for the evaluation func F5
+v1.3
+add token_id
 
+v1.4
+sepertate long token
 
-# v3.0:
-# parameter tuning (optuna)
+v1.5
+read discussion and find tips then make decision to improve the model
 
 
-# v4.0:
-# /n/n -> to some special token like [KAIGYO]
-# " " -> to some special token like [SPACE] ?
-# avarage the result of each fold
-# weighted avarage the result of each fold
-# input min, av, max, std to LGBM
+v2.0:
+use google colab to train the model using devera-v3-xlarge
+find the best loss func for the evaluation func F5
 
 
-# v5.0:
-# create new dataset to train the model strongly
+v3.0:
+parameter tuning (optuna)
 
 
-# v6.0:
-# optuna again
+v4.0:
+/n/n -> to some special token like [KAIGYO]
+" " -> to some special token like [SPACE] ?
+avarage the result of each fold
+weighted avarage the result of each fold
+input min, av, max, std to LGBM
 
 
-# v7.0:
-# find the other model to fusion the model
+v5.0:
+create new dataset to train the model strongly
+
+
+v6.0:
+optuna again
+
+
+v7.0:
+find the other model to fusion the model
 
 
 
 
 
-# MEMO:
-# batch_size * steps = total number of the data
-# step size is defined by the batch size automatically
-# the step count is different between P100 and T4x2 because the batch size is different
-# how to define the batch size?
-# if I can define the batch size manually, the step size for the P100 and T4x2 will be the same
-# P100: 2553 steps, 2553 / 3 = 851 (steps), 6807 / 851 = 8  (batch size)
-# T4x2: 1278 steps, 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
-# epoch = the number of learning using the whole data
+MEMO:
+batch_size * steps = total number of the data
+step size is defined by the batch size automatically
+the step count is different between P100 and T4x2 because the batch size is different
+how to define the batch size?
+if I can define the batch size manually, the step size for the P100 and T4x2 will be the same
+P100: 2553 steps, 2553 / 3 = 851 (steps), 6807 / 851 = 8  (batch size)
+T4x2: 1278 steps, 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
+epoch = the number of learning using the whole data
 
-# T4x2: 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
+T4x2: 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
