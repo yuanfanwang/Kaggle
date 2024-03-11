@@ -1,14 +1,27 @@
 v1.2
 trailing_whitespace
+    whitespaceがないtokenを全て繋げる
+    token_id の 対応
+    original_token     : ['reflexion', '-', 'Avril', '2021']
+    original_token_id  : [4,           5,   6,       7]
+    my_token           : ['reflexion-Avril',         '2021']
+    my_token_id        : [4,                         7] 
+    
+    my_token_ids_model : [4, 4, 4, 4, 4, 7, 7]
+    my_token_ids_label : [B, I, I, I, I, O, O]
+
+    original_label     : [B,           I,   I,       O]
+    ### 5, 6 も 'I' とするのが大変
 
 v1.3
-add token_id
+read discussion and find tips then make decision to improve the model
 
 v1.4
+tokenを分割する \n\nで
+add token_id
 sepertate long token
 
-v1.5
-read discussion and find tips then make decision to improve the model
+
 
 
 v2.0:

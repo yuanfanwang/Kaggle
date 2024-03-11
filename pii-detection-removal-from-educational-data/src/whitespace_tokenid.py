@@ -13,19 +13,30 @@ import polars as pl
 from datasets import Dataset, DatasetDict
 from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
+from transformers import AutoTokenizer, DataCollatorForTokenClassification, AutoModelForTokenClassification, TrainingArguments, Trainer
+
 
 torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
+class CFG:
+    sample_data_size = 5
+    batch_size = 1
+    token_max_length = 1024
+    epoch = 3
+    fold = 4
+
+
 Local = True
 if Local:
     data_path = "data/"
+    model_checkpoint = "microsoft/deberta-v3-base"
 else:
     data_path = "/kaggle/input/pii-detection-removal-from-educational-data/"
+    model_checkpoint = "/kaggle/input/debertav3base"
 
-model_checkpoint = "/kaggle/input/debertav3base"
 label_names = [
     "O",
     "B-NAME_STUDENT",
@@ -86,18 +97,32 @@ def tokenize_and_align_labels(examples):
     return tokenized_inputs
 
 
-def add_fold_column(example):
+def add_fold_column(examples):
     # return when it is test dataset
-    if 'labels' not in example: return example
+    if 'labels' not in examples: return examples
     # just want to know the length of the example to add fold column
-    eg_len = len(example['input_ids'])
+    eg_len = len(examples['input_ids'])
     folds = np.random.randint(0, CFG.fold, eg_len)
-    example['fold'] = folds
-    return example
+    examples['fold'] = folds
+    return examples
+
+
+def add_training_whitespace_to_tokens(examples):
+    tokens_batch = examples['tokens']
+    whitespaces_batch = examples['trailing_whitespace']    
+    new_tokens_batch = []
+    for tokens, whitespaces in zip(tokens_batch, whitespaces_batch):
+        new_tokens = []
+        for token, whitespace in zip(tokens, whitespaces):
+            new_tokens.append(token + (' ' * whitespace))
+        new_tokens_batch.append(new_tokens)
+    examples['tokens'] = new_tokens_batch
+    return examples
 
 
 def make_dataset():
     train_df = pl.read_json(data_path + "train.json").to_pandas()
+    train_df = train_df[:CFG.sample_data_size]
     train_dataset = Dataset.from_pandas(train_df)
     test_df = pl.read_json(data_path + "test.json").to_pandas()
     test_dataset = Dataset.from_pandas(test_df)
@@ -105,6 +130,11 @@ def make_dataset():
         "train": train_dataset,
         "test": test_dataset
     })
+
+    datasets = datasets.map(
+        add_training_whitespace_to_tokens,
+        batched=True,
+    )
 
     datasets = datasets.map(
         tokenize_and_align_labels,
