@@ -188,16 +188,16 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
 
     args = TrainingArguments(
         disable_tqdm=False,
-        output_dir=f"bert-finetune-ner_{i}",
-        # evaluation_strategy="epoch",
-        evaluation_strategy="steps",
+        output_dir=f"bert-finetune-ner_{i}", 
+        evaluation_strategy="steps", # "epoch"
         eval_steps=1000,
-        # fp16=True,
+        fp16=True,
         save_strategy="no",
         per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
         per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
         learning_rate=2e-5,
         num_train_epochs=CFG.epoch,
+        # load_best_model_at_end=True,
         weight_decay=0.01,
         push_to_hub=False,
         report_to="none",

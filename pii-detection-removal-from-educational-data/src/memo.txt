@@ -13,8 +13,30 @@ trailing_whitespace
     original_label     : [B,           I,   I,       O]
     ### 5, 6 も 'I' とするのが大変
 
+
+# overall
+v1~2
+shorten token, less than 1024
+new data and downsample
+
+optuna
+
+best score f5
+
+
+
 v1.3
 read discussion and find tips then make decision to improve the model
+
+
+
+
+v1.31
+downsample
+then create new data
+b5 threthold 0.9
+
+
 
 v1.4
 tokenを分割する \n\nで
@@ -22,15 +44,17 @@ add token_id
 sepertate long token
 
 
+v1.5
+find the best loss func for the evaluation func F5
+
+
+v1.6:
+parameter tuning (optuna)
 
 
 v2.0:
 use google colab to train the model using devera-v3-xlarge
-find the best loss func for the evaluation func F5
 
-
-v3.0:
-parameter tuning (optuna)
 
 
 v4.0:
@@ -43,6 +67,11 @@ input min, av, max, std to LGBM
 
 v5.0:
 create new dataset to train the model strongly
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/472221
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/483058
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/480747
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/477989
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/478911
 
 
 v6.0:
@@ -51,7 +80,7 @@ optuna again
 
 v7.0:
 find the other model to fusion the model
-
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/468743
 
 
 
