@@ -54,9 +54,9 @@ label_names = [
     "B-STREET_ADDRESS",
     "I-STREET_ADDRESS",
 ]
+
 id2label = {str(i): label for i, label in enumerate(label_names)}
 label2id = {label: i for i, label in enumerate(label_names)}
-
 
 def align_labels_with_tokens(labels, word_ids):
     new_labels = []

@@ -17,6 +17,11 @@ trailing_whitespace
 # overall
 v1~2
 shorten token, less than 1024
+    1. tokenize
+    2. split it into 1024
+    3. criteria
+        a. split by \n\n  \n\n はトークンとして残る？
+        b. 
 new data and downsample
 
 optuna
@@ -96,3 +101,28 @@ T4x2: 1278 steps, 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
 epoch = the number of learning using the whole data
 
 T4x2: 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
+
+
+\n\n はトークンとして残らない
+'ABC,' -> 'ABC' ',' となる
+'ABC.' -> 'ABC' '.' となる
+
+\n\nで分割する
+tokenizeで膨らむはず
+しかしやりたいのは膨らんだ後1024であることを保証する
+tokenizedの状態で分割すると変なところ BとIの間で分割してしまって、B, Bとなってしまうことを防ぎたい
+\n\nの最大長は1024を超えていた
+新しく生成されたデータには\n\nがない時もある
+
+まず、全てを\n\nで分割したい
+そして、tokenizeする
+--------------------
+まずここまで実装する？
+tokeinze して 分割して大丈夫なピリオドとそうでないピリオドを分ける
+それか、ピリオドではない全く別のところで分ける
+安全なところで分けたい
+
+Mr. -> Mr .
+となっているので、tokenize 前の '.' または ';' を狙う？
+
+- '\n', '\n\n', '.', ';' で分離する
