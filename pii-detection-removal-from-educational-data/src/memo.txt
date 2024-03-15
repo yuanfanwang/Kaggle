@@ -8,15 +8,16 @@ downsample
 
 
 
+
 v2.0
-create a loss function suitable for the objective function f5
-b5 threthold 0.9
+optuna
+google colab
 
 
 
 v3.0
-google colab
-optuna
+create a loss function suitable for the objective function f5
+b5 threthold 0.9
 
 
 
