@@ -192,8 +192,9 @@ def split_below_max_length(df: pl.DataFrame):
 
 
 def make_train_dataset():
-    train_df = pl.read_json(data_path + "train.json").to_pandas()
-    # TODO: downsample
+    train_df = pl.read_json(data_path + "train.json") \
+                 .filter(pl.col('labels').map_elements(lambda x: not all(label == 'O' for label in x))) \
+                 .to_pandas()
     train_df = train_df[:CFG.sample_data_size]
     train_dataset = Dataset.from_pandas(train_df)
     train_dataset = train_dataset.map(
