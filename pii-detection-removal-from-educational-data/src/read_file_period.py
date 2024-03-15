@@ -6,6 +6,16 @@ from datasets import Dataset, DatasetDict
 
 train_df = pl.read_json("data/train.json").to_pandas()
 
+# print(train_df['document'][3175])
+document = -1
+length = 0
+for i, document in enumerate(train_df['document']):
+    if length < len(train_df['tokens'][i]):
+        length = len(train_df['tokens'][i])
+        document = train_df['document'][i]
+print(document)
+print(length)
+
 # 3175
 # print(train_df['full_text'][3175])
 # sys.exit()
@@ -15,7 +25,6 @@ train_df = pl.read_json("data/train.json").to_pandas()
 #     if i > 200: break
 # sys.exit()
 
-"""
 max_tokens_list = []
 for i, tokens in enumerate(train_df['tokens']):
     token_count_list = []
@@ -36,14 +45,15 @@ for i, tokens in enumerate(train_df['tokens']):
 # print(train_df['tokens'][np.argmax(max_tokens_list)][:1000])
 
 """
-
+# 1103
+# 1887
 
 for i, (labels, tokens) in enumerate(zip(train_df['labels'], train_df['tokens'])):
     has_addr = False
     for label, token in zip(labels, tokens):
         if label == 'B-STREET_ADDRESSl' or label == 'I-STREET_ADDRESS':
-            print(f"-{token}-")
             has_addr = True
+            break
     if has_addr:
-        print(train_df['full_text'][i])
         print(f"----{i}----")
+"""
