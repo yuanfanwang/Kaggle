@@ -137,7 +137,6 @@ def split_below_max_length(df: pl.DataFrame):
         new_df['labels'] = []
 
     def append_new_row(document, input_ids, token_type_ids, attention_mask, word_ids, labels, fold):
-        # TODO: add [CLS], [SEP] to the input_ids, token_type_ids, attention_mask, word_ids
         new_df['document'].append(document)             #  None
         new_df['input_ids'].append(input_ids)           # [1, 2]
         new_df['token_type_ids'].append(token_type_ids) # [0, 0]
@@ -161,9 +160,6 @@ def split_below_max_length(df: pl.DataFrame):
             if input_id in splitable_input_ids:
                 splitable_idx.append(i+1)
         splitable_idx.append(len(input_ids))
-        if length < len(input_ids):
-            length = len(input_ids)
-            document = row['document']
 
         start_id = 0
         for i in range(len(splitable_idx)-1):
@@ -178,6 +174,7 @@ def split_below_max_length(df: pl.DataFrame):
                     None if not is_train else ([-100] + word_ids[start_id:end_id] + [-100]),
                     fold
                 )
+                start_id = end_id
 
         if start_id != len(input_ids):
             append_new_row(
@@ -189,6 +186,7 @@ def split_below_max_length(df: pl.DataFrame):
                 None if not is_train else ([-100] + word_ids[start_id:] + [-100]),
                 fold
             )
+
     new_df = pl.DataFrame(new_df)
     return new_df
 
