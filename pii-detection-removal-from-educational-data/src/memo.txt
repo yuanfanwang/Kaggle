@@ -1,68 +1,39 @@
 v1.2
-trailing_whitespace
-    whitespaceがないtokenを全て繋げる
-    token_id の 対応
-    original_token     : ['reflexion', '-', 'Avril', '2021']
-    original_token_id  : [4,           5,   6,       7]
-    my_token           : ['reflexion-Avril',         '2021']
-    my_token_id        : [4,                         7] 
-    
-    my_token_ids_model : [4, 4, 4, 4, 4, 7, 7]
-    my_token_ids_label : [B, I, I, I, I, O, O]
-
-    original_label     : [B,           I,   I,       O]
-    ### 5, 6 も 'I' とするのが大変
-
-
-# overall
-v1~2
-shorten token, less than 1024
-    1. tokenize
-    2. split it into 1024
-    3. criteria
-        a. split by \n\n  \n\n はトークンとして残る？
-        b. 
-new data and downsample
-
-optuna
-
-best score f5
+split input to make the maximum length of input 1024
 
 
 
 v1.3
-read discussion and find tips then make decision to improve the model
-
-
-
-
-v1.31
 downsample
-then create new data
+
+
+
+v2.0
+create a loss function suitable for the objective function f5
 b5 threthold 0.9
 
 
 
-v1.4
-tokenを分割する \n\nで
-add token_id
-sepertate long token
-
-
-v1.5
-find the best loss func for the evaluation func F5
-
-
-v1.6:
-parameter tuning (optuna)
-
-
-v2.0:
-use google colab to train the model using devera-v3-xlarge
+v3.0
+google colab
+optuna
 
 
 
-v4.0:
+v4.0
+create new dataset to train the model
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/472221
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/483058
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/480747
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/477989
+    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/478911
+then, optuna again
+
+
+
+v5.0
+consider trailing_whitespace
+LSTM
 /n/n -> to some special token like [KAIGYO]
 " " -> to some special token like [SPACE] ?
 avarage the result of each fold
@@ -70,22 +41,20 @@ weighted avarage the result of each fold
 input min, av, max, std to LGBM
 
 
-v5.0:
-create new dataset to train the model strongly
-    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/472221
-    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/483058
-    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/480747
-    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/477989
-    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/478911
+
+v6.0
+find the other model to ansamble
 
 
-v6.0:
-optuna again
 
 
-v7.0:
-find the other model to fusion the model
-    https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/468743
+
+
+
+
+
+
+
 
 
 
@@ -99,40 +68,12 @@ if I can define the batch size manually, the step size for the P100 and T4x2 wil
 P100: 2553 steps, 2553 / 3 = 851 (steps), 6807 / 851 = 8  (batch size)
 T4x2: 1278 steps, 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
 epoch = the number of learning using the whole data
-
 T4x2: 1278 / 3 = 426 (steps), 6807 / 426 = 16 (batch size)
-
-
-\n\n はトークンとして残らない
-'ABC,' -> 'ABC' ',' となる
-'ABC.' -> 'ABC' '.' となる
-
-\n\nで分割する
-tokenizeで膨らむはず
-しかしやりたいのは膨らんだ後1024であることを保証する
-tokenizedの状態で分割すると変なところ BとIの間で分割してしまって、B, Bとなってしまうことを防ぎたい
-\n\nの最大長は1024を超えていた
-新しく生成されたデータには\n\nがない時もある
-
-まず、全てを\n\nで分割したい
-そして、tokenizeする
---------------------
-まずここまで実装する？
-tokeinze して 分割して大丈夫なピリオドとそうでないピリオドを分ける
-それか、ピリオドではない全く別のところで分ける
-安全なところで分けたい
-
-Mr. -> Mr .
-となっているので、tokenize 前の '.' または ';' を狙う？
-
-- '\n', '\n\n', '.', ';' で分離する
-
-
-# input_ids
-# X. 260
-# .  323
-# X, 261  
-# ,  366
-# X; 346 
-# ;  2600
+input_ids
+    X. 260
+    .  323
+    X, 261  
+    ,  366
+    X; 346 
+    ;  2600
 
