@@ -2,27 +2,29 @@ v1.2
 split input to make the maximum length of input 1024
 
 
-
 v1.3
 downsample
 
 
-
-
 v2.0
 optuna
-google colab
-
-
+simply create objective function of optuna with deberta-v3-base
+classificate the process of optuna to enable the optuna to select the best parameter whenever I want to
+    1. create the objective function
+    2. create the study
+    3. optimize the study
+    4. get the best model
+    5. save the best model
+    6. load the best model
+    7. predict the test data
+    8. submit the result
 
 v3.0
-create a loss function suitable for the objective function f5
-b5 threthold 0.9
-
+enable google colab to use optuna
 
 
 v4.0
-create new dataset to train the model
+create new dataset to make oputuna to select the best parameter more practically
     https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/472221
     https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/483058
     https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/480747
@@ -31,8 +33,12 @@ create new dataset to train the model
 then, optuna again
 
 
-
 v5.0
+create a loss function suitable for the objective function f5
+b5 threthold 0.9
+
+
+v6.0
 consider trailing_whitespace
 LSTM
 /n/n -> to some special token like [KAIGYO]
@@ -42,8 +48,7 @@ weighted avarage the result of each fold
 input min, av, max, std to LGBM
 
 
-
-v6.0
+v7.0
 find the other model to ansamble
 
 
