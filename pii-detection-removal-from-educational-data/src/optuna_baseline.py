@@ -27,6 +27,7 @@ class CFG:
     epoch = 3
     fold = 4
     use_optuna = True
+    downsampling = True
 
 # set random seed
 def seed_everything(seed: int):
@@ -195,9 +196,10 @@ def split_below_max_length(df: pl.DataFrame):
 
 
 def make_train_dataset():
-    train_df = pl.read_json(data_path + "train.json") \
-                 .filter(pl.col('labels').map_elements(lambda x: not all(label == 'O' for label in x))) \
-                 .to_pandas()
+    train_df = pl.read_json(data_path + "train.json")
+    if CFG.downsampling:
+        train_df = train_df.filter(pl.col('labels').map_elements(lambda x: not all(label == 'O' for label in x)))
+    train_df = train_df.to_pandas()
     if CFG.sample_data_size: train_df = train_df[:CFG.sample_data_size]
     train_dataset = Dataset.from_pandas(train_df)
     train_dataset = train_dataset.map(
@@ -335,7 +337,7 @@ def learning(hyperparams):
 
 def objective(trial):
     hyperparams = {
-        'learning_rate': trial.suggest_float('learning_rate', 1e-7, 1e-2),
+        'learning_rate': trial.suggest_float('learning_rate', 1e-8, 1e-4),
         'num_train_epochs': trial.suggest_int('num_train_epochs', 1, 10),
     }
     eval_result = learning(hyperparams)
