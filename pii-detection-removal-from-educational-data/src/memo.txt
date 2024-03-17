@@ -8,16 +8,11 @@ downsample
 
 v2.0
 optuna
-simply create objective function of optuna with deberta-v3-base
-classificate the process of optuna to enable the optuna to select the best parameter whenever I want to
-    1. create the objective function
-    2. create the study
-    3. optimize the study
-    4. get the best model
-    5. save the best model
-    6. load the best model
-    7. predict the test data
-    8. submit the result
+    1. simply create objective function of optuna with deberta-v3-base
+        1. only learning_rate
+        2. list up all the parameters to be optimized
+    2. classificate the process of optuna to enable the optuna to select the best parameter whenever I want to
+
 
 v3.0
 enable google colab to use optuna
