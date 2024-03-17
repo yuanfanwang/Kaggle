@@ -43,7 +43,7 @@ np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-Local = True
+Local = False
 if Local:
     data_path = "data/"
     model_checkpoint = "microsoft/deberta-v3-base"
@@ -171,7 +171,7 @@ def split_below_max_length(df: pl.DataFrame):
                     [0]    + token_type_ids[start_id:end_id] + [0],
                     [1]    + attention_mask[start_id:end_id] + [1],
                     [None] + word_ids[start_id:end_id]       + [None],
-                    None if not is_train else ([-100] + word_ids[start_id:end_id] + [-100]),
+                    None if not is_train else ([-100] + labels[start_id:end_id] + [-100]),
                     fold
                 )
                 start_id = end_id
@@ -183,7 +183,7 @@ def split_below_max_length(df: pl.DataFrame):
                 [0]    + token_type_ids[start_id:] + [0],
                 [1]    + attention_mask[start_id:] + [1],
                 [None] + word_ids[start_id:]       + [None],
-                None if not is_train else ([-100] + word_ids[start_id:] + [-100]),
+                None if not is_train else ([-100] + labels[start_id:] + [-100]),
                 fold
             )
 
