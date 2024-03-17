@@ -20,11 +20,13 @@ from seqeval.metrics import precision_score, recall_score, accuracy_score, f1_sc
 
 
 class CFG:
-    sample_data_size = 100
+    local = False
+    sample_data_size = None
     batch_size = 1
     token_max_length = 1024
     epoch = 3
     fold = 4
+    use_optuna = True
 
 # set random seed
 def seed_everything(seed: int):
@@ -42,9 +44,10 @@ torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+if CFG.use_optuna:
+    import optuna
 
-Local = True
-if Local:
+if CFG.local:
     data_path = "data/"
     model_checkpoint = "microsoft/deberta-v3-base"
 else:
@@ -171,7 +174,7 @@ def split_below_max_length(df: pl.DataFrame):
                     [0]    + token_type_ids[start_id:end_id] + [0],
                     [1]    + attention_mask[start_id:end_id] + [1],
                     [None] + word_ids[start_id:end_id]       + [None],
-                    None if not is_train else ([-100] + word_ids[start_id:end_id] + [-100]),
+                    None if not is_train else ([-100] + labels[start_id:end_id] + [-100]),
                     fold
                 )
                 start_id = end_id
@@ -183,7 +186,7 @@ def split_below_max_length(df: pl.DataFrame):
                 [0]    + token_type_ids[start_id:] + [0],
                 [1]    + attention_mask[start_id:] + [1],
                 [None] + word_ids[start_id:]       + [None],
-                None if not is_train else ([-100] + word_ids[start_id:] + [-100]),
+                None if not is_train else ([-100] + labels[start_id:] + [-100]),
                 fold
             )
 
@@ -195,7 +198,7 @@ def make_train_dataset():
     train_df = pl.read_json(data_path + "train.json") \
                  .filter(pl.col('labels').map_elements(lambda x: not all(label == 'O' for label in x))) \
                  .to_pandas()
-    train_df = train_df[:CFG.sample_data_size]
+    if CFG.sample_data_size: train_df = train_df[:CFG.sample_data_size]
     train_dataset = Dataset.from_pandas(train_df)
     train_dataset = train_dataset.map(
         tokenize_and_align_labels,
@@ -266,94 +269,91 @@ def compute_metrics(eval_preds):
         "accuracy": accuracy_score(true_labels, true_predictions),
     }
 
+def learning(hyperparams):
+    if hyperparams is not None:
+        print(f"\n\
+                learning_rate:    {hyperparams['learning_rate']},\
+                num_train_epochs: {hyperparams['num_train_epochs']}")
 
-best_f5_score = -1.0
-best_trainer = None
-gkf = GroupKFold(n_splits=CFG.fold)
-gkf_dataset = gkf.split(X=tokenized_datasets['train'],
-                        y=tokenized_datasets['train']['labels'],
-                        groups=tokenized_datasets['train']['fold'])
-for i, (train_index, valid_index) in enumerate(gkf_dataset):
-    print(f"\nFold {i}")
-    train_dataset = tokenized_datasets['train'].select(train_index)    
-    valid_dataset = tokenized_datasets['train'].select(valid_index)
+    best_f5_score = -1.0
+    best_trainer = None
 
-    model = AutoModelForTokenClassification.from_pretrained(
-        model_checkpoint, id2label=id2label, label2id=label2id).to(device)
+    gkf = GroupKFold(n_splits=CFG.fold)
+    gkf_dataset = gkf.split(X=tokenized_datasets['train'],
+                            y=tokenized_datasets['train']['labels'],
+                            groups=tokenized_datasets['train']['fold'])
+    avg_f5_score = 0.0
+    for i, (train_index, valid_index) in enumerate(gkf_dataset):
+        print(f"\nFold {i}")
+        train_dataset = tokenized_datasets['train'].select(train_index)    
+        valid_dataset = tokenized_datasets['train'].select(valid_index)
 
-    args = TrainingArguments(
-        disable_tqdm=False,
-        output_dir=f"bert-finetune-ner_{i}", 
-        evaluation_strategy="steps", # "epoch"
-        eval_steps=1000,
-        fp16=True,
-        save_strategy="no",
-        per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
-        per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-        learning_rate=2e-5,
-        num_train_epochs=CFG.epoch,
-        # load_best_model_at_end=True,
-        weight_decay=0.01,
-        push_to_hub=False,
-        report_to="none",
-        log_level="error",
-    )
+        model = AutoModelForTokenClassification.from_pretrained(
+            model_checkpoint, id2label=id2label, label2id=label2id).to(device)
 
-    trainer = Trainer(
-        model=model,
-        args=args,
-        train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
-        data_collator=data_collator,
-        compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
-    )
+        learning_rate = 0.00960811179292991 if not CFG.use_optuna else hyperparams['learning_rate']
+        num_train_epochs = 8 if not CFG.use_optuna else hyperparams['num_train_epochs']
+        args = TrainingArguments(
+            disable_tqdm=False,
+            output_dir=f"bert-finetune-ner_{i}", 
+            evaluation_strategy="steps", # "epoch", "no"
+            eval_steps=1000,
+            fp16=True,
+            save_strategy="no",
+            per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
+            per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
+            learning_rate=learning_rate,
+            num_train_epochs=num_train_epochs,
+            # load_best_model_at_end=True,
+            weight_decay=0.01,
+            push_to_hub=False,
+            report_to="none",
+            log_level="error",
+        )
 
-    # train model
-    trainer.train()
+        trainer = Trainer(
+            model=model,
+            args=args,
+            train_dataset=train_dataset,
+            eval_dataset=valid_dataset,
+            data_collator=data_collator,
+            compute_metrics=compute_metrics,
+            tokenizer=tokenizer,
+        )
 
-    # evaluate model with valid dataset to get the best model
-    eval_result = trainer.evaluate()
-    print(f"f5: {eval_result['eval_f5']}")
+        # train model
+        trainer.train()
 
-    # TODO: for ansamble (but this process takes about 20min if the size of the test dataset is 20,000.)
-    # prediction = trainer.predict(tokenized_datasets['test'])
-    # label_predictions = np.argmax(prediction.predictions, axis=-1)
+        # evaluate model with valid dataset to get the best model
+        eval_result = trainer.evaluate()
+        # print(f"1 - (f5): {1 - eval_result['eval_f5']}")
+        avg_f5_score += 1 - eval_result['eval_f5']
 
-    if best_f5_score < eval_result['eval_f5']:
-        best_f5_score = eval_result['eval_f5']
-        best_trainer = trainer
+    avg_f5_score /= CFG.fold
+    print(f"avg_f5_score: {avg_f5_score}")
+    return avg_f5_score
 
+def objective(trial):
+    hyperparams = {
+        'learning_rate': trial.suggest_float('learning_rate', 1e-7, 1e-2),
+        'num_train_epochs': trial.suggest_int('num_train_epochs', 1, 10),
+    }
+    eval_result = learning(hyperparams)
+    return eval_result
 
-# predict labels 
-test_datasets     = tokenized_datasets['test']
-prediction        = best_trainer.predict(test_datasets)  # PredictionOutput Object
-label_predictions = np.argmax(prediction.predictions, axis=-1)  # (data_size, token max length)
+def run_optuna():
+    study = optuna.create_study()
+    study.optimize(objective, n_trials=100)
 
-# create submission file
-row_id_sub, document_sub, token_sub, label_sub = [], [], [], []
-test_df = pd.DataFrame(test_datasets)
-for i, labels in enumerate(label_predictions):
-    word_ids = test_df.at[i, 'word_ids']
-    document = test_df.at[i, 'document']
-    current_id = None
-    for j, (pii_idx, word_id) in enumerate(zip(labels, word_ids)):
-        if word_id == None: continue
-        if current_id != word_id:
-            current_id = word_id
-            if pii_idx != 0:
-                row_id_sub.append(len(row_id_sub))
-                document_sub.append(document)
-                token_sub.append(word_id)
-                label_sub.append(label_names[pii_idx])
+    best_params = study.best_params
+    best_value = study.best_value
 
-submission = {
-    'row_id': row_id_sub,
-    'document': document_sub,
-    'token': token_sub,
-    'label': label_sub
-}
+    print("best_params: ", best_params)
+    print("best_value: ", best_value)
 
-submission = pd.DataFrame(submission)
-print(submission.head())
-submission.to_csv("submission.csv", index=False)
+if CFG.use_optuna:
+    print("Use optuna")
+    run_optuna()
+else:
+    print("Not use optuna")
+    learning(None)

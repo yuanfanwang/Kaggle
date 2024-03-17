@@ -11,6 +11,7 @@ optuna
     1. simply create objective function of optuna with deberta-v3-base
         1. only learning_rate
         2. list up all the parameters to be optimized
+    3. is my optuna including early stopping?
     2. classificate the process of optuna to enable the optuna to select the best parameter whenever I want to
 
 
