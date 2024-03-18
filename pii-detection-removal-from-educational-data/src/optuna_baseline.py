@@ -2,7 +2,8 @@
 !pip install "/kaggle/input/seqeval/seqeval-1.2.2-py3-none-any.whl"
 """
 
-
+import copy
+import optuna
 import os
 import random
 import sys
@@ -15,7 +16,9 @@ import polars as pl
 from datasets import Dataset, DatasetDict
 from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
-from transformers import AutoTokenizer, DataCollatorForTokenClassification, AutoModelForTokenClassification, TrainingArguments, Trainer
+from transformers import AutoTokenizer, DataCollatorForTokenClassification, \
+                         AutoModelForTokenClassification, TrainingArguments, Trainer
+from typing import Dict
 from seqeval.metrics import precision_score, recall_score, accuracy_score, f1_score
 
 
@@ -26,7 +29,6 @@ class CFG:
     token_max_length = 1024
     epoch = 3
     fold = 4
-    use_optuna = True
     downsampling = True
 
 # set random seed
@@ -44,9 +46,6 @@ seed_everything(seed=42)
 torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-if CFG.use_optuna:
-    import optuna
 
 if CFG.local:
     data_path = "data/"
@@ -271,91 +270,71 @@ def compute_metrics(eval_preds):
         "accuracy": accuracy_score(true_labels, true_predictions),
     }
 
-def learning(hyperparams):
-    if hyperparams is not None:
-        print(f"\n\
-                learning_rate:    {hyperparams['learning_rate']},\
-                num_train_epochs: {hyperparams['num_train_epochs']}")
+gkf = GroupKFold(n_splits=CFG.fold)
+gkf_dataset = gkf.split(X=tokenized_datasets['train'],
+                        y=tokenized_datasets['train']['labels'],
+                        groups=tokenized_datasets['train']['fold'])
+avg_f5_score = 0.0
+for i, (train_index, valid_index) in enumerate(gkf_dataset):
+    print(f"\nFold {i}")
+    train_dataset = tokenized_datasets['train'].select(train_index)    
+    valid_dataset = tokenized_datasets['train'].select(valid_index)
 
-    best_f5_score = -1.0
-    best_trainer = None
+    # https://huggingface.co/docs/transformers/en/hpo_train
+    def optuna_hp_space(trial):
+        return {
+            "learning_rate": trial.suggest_float("learning_rate", 1e-8, 1e-4),
+            "num_train_epochs": trial.suggest_int("num_train_epochs", 1, 10),
+        }
 
-    gkf = GroupKFold(n_splits=CFG.fold)
-    gkf_dataset = gkf.split(X=tokenized_datasets['train'],
-                            y=tokenized_datasets['train']['labels'],
-                            groups=tokenized_datasets['train']['fold'])
-    avg_f5_score = 0.0
-    for i, (train_index, valid_index) in enumerate(gkf_dataset):
-        print(f"\nFold {i}")
-        train_dataset = tokenized_datasets['train'].select(train_index)    
-        valid_dataset = tokenized_datasets['train'].select(valid_index)
+    def model_init(trial):
+        return AutoModelForTokenClassification.from_pretrained(
+                   model_checkpoint, id2label=id2label, label2id=label2id).to(device)
 
-        model = AutoModelForTokenClassification.from_pretrained(
-            model_checkpoint, id2label=id2label, label2id=label2id).to(device)
+    def compute_objective(metrics: Dict[str, float]) -> float:
+        metrics = copy.deepcopy(metrics)
+        loss = metrics['eval_f5']
+        return loss
 
-        learning_rate = 0.00960811179292991 if not CFG.use_optuna else hyperparams['learning_rate']
-        num_train_epochs = 8 if not CFG.use_optuna else hyperparams['num_train_epochs']
-        args = TrainingArguments(
-            disable_tqdm=False,
-            output_dir=f"bert-finetune-ner_{i}", 
-            evaluation_strategy="steps", # "epoch", "no"
-            eval_steps=1000,
-            fp16=True,
-            save_strategy="no",
-            per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
-            per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-            learning_rate=learning_rate,
-            num_train_epochs=num_train_epochs,
-            # load_best_model_at_end=True,
-            weight_decay=0.01,
-            push_to_hub=False,
-            report_to="none",
-            log_level="error",
-        )
+    args = TrainingArguments(
+        disable_tqdm=False,
+        output_dir=f"bert-finetune-ner_{i}", 
+        evaluation_strategy="epoch", # "epoch", "no"
+        # eval_steps=1000,
+        fp16=True,
+        save_strategy="no",
+        per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
+        per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
+        # learning_rate=learning_rate,
+        # num_train_epochs=num_train_epochs,
+        # load_best_model_at_end=True,
+        weight_decay=0.01,
+        push_to_hub=False,
+        report_to="none",
+        log_level="error",
+    )
 
-        trainer = Trainer(
-            model=model,
-            args=args,
-            train_dataset=train_dataset,
-            eval_dataset=valid_dataset,
-            data_collator=data_collator,
-            compute_metrics=compute_metrics,
-            tokenizer=tokenizer,
-        )
+    trainer = Trainer(
+        model=None,
+        args=args,
+        train_dataset=train_dataset,
+        eval_dataset=valid_dataset,
+        compute_metrics=compute_metrics,
+        tokenizer=tokenizer,
+        model_init=model_init,
+        data_collator=data_collator,
+    )
+    #############################################################
 
-        # train model
-        trainer.train()
+    best_trails = trainer.hyperparameter_search(
+        direction="maximize",
+        backend="optuna",
+        hp_space=optuna_hp_space,
+        n_trials=20,
+        compute_objective=compute_objective
+    )
 
-        # evaluate model with valid dataset to get the best model
-        eval_result = trainer.evaluate()
-        # print(f"1 - (f5): {1 - eval_result['eval_f5']}")
-        avg_f5_score += 1 - eval_result['eval_f5']
-
-    avg_f5_score /= CFG.fold
-    print(f"avg_f5_score: {avg_f5_score}")
-    return avg_f5_score
-
-def objective(trial):
-    hyperparams = {
-        'learning_rate': trial.suggest_float('learning_rate', 1e-8, 1e-4),
-        'num_train_epochs': trial.suggest_int('num_train_epochs', 1, 10),
-    }
-    eval_result = learning(hyperparams)
-    return eval_result
-
-def run_optuna():
-    study = optuna.create_study()
-    study.optimize(objective, n_trials=100)
-
-    best_params = study.best_params
-    best_value = study.best_value
-
-    print("best_params: ", best_params)
-    print("best_value: ", best_value)
-
-if CFG.use_optuna:
-    print("Use optuna")
-    run_optuna()
-else:
-    print("Not use optuna")
-    learning(None)
+    print(best_trails)
+    
+    # break from Group K Fold
+    break

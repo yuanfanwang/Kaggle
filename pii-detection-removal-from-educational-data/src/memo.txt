@@ -11,7 +11,19 @@ optuna
     1. simply create objective function of optuna with deberta-v3-base
         1. only learning_rate
         2. list up all the parameters to be optimized
+            . lr
+            . optimizer
+            . drop_out
+            . decay
+            . batch size
+            . epoch
+            . fold
+            . max_length
+
     3. is my optuna including early stopping?
+        https://optuna.readthedocs.io/en/stable/tutorial/10_key_features/003_efficient_optimization_algorithms.html
+        https://www.youtube.com/watch?v=P6NwZVl8ttc 20:40
+        the keyword is prune, should_prune, report
     2. classificate the process of optuna to enable the optuna to select the best parameter whenever I want to
 
 
