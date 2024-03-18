@@ -16,7 +16,7 @@ import polars as pl
 from datasets import Dataset, DatasetDict
 from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
-from transformers import AutoTokenizer, DataCollatorForTokenClassification, \
+from transformers import AutoTokenizer, DataCollatorForTokenClassification, AutoConfig,\
                          AutoModelForTokenClassification, TrainingArguments, Trainer
 from typing import Dict
 from seqeval.metrics import precision_score, recall_score, accuracy_score, f1_score
@@ -270,71 +270,72 @@ def compute_metrics(eval_preds):
         "accuracy": accuracy_score(true_labels, true_predictions),
     }
 
-gkf = GroupKFold(n_splits=CFG.fold)
-gkf_dataset = gkf.split(X=tokenized_datasets['train'],
-                        y=tokenized_datasets['train']['labels'],
-                        groups=tokenized_datasets['train']['fold'])
-avg_f5_score = 0.0
-for i, (train_index, valid_index) in enumerate(gkf_dataset):
-    print(f"\nFold {i}")
-    train_dataset = tokenized_datasets['train'].select(train_index)    
-    valid_dataset = tokenized_datasets['train'].select(valid_index)
+def optuna_hp_space(trial):
+    return {
+        "learning_rate": trial.suggest_float("learning_rate", 1e-8, 1e-4),
+        "num_train_epochs": trial.suggest_int("num_train_epochs", 1, 5),
+        "weight_decay": trial.suggest_float("weight_decay", 1e-3, 1e-1),
+    }
 
-    # https://huggingface.co/docs/transformers/en/hpo_train
-    def optuna_hp_space(trial):
-        return {
-            "learning_rate": trial.suggest_float("learning_rate", 1e-8, 1e-4),
-            "num_train_epochs": trial.suggest_int("num_train_epochs", 1, 10),
-        }
+def model_init(trial):
+    config = AutoConfig.from_pretrained(model_checkpoint)
+    # hidden_dropout_prob: 0.1 as default
+    # attention_probs_dropout_prob: 0.1 as default
+    # print("hidden_dropout_prob: ", config.hidden_dropout_prob)
+    # print("attention_probs_dropout_prob: ", config.hidden_dropout_prob)
+    return AutoModelForTokenClassification.from_pretrained(
+               model_checkpoint, id2label=id2label, label2id=label2id).to(device)
 
-    def model_init(trial):
-        return AutoModelForTokenClassification.from_pretrained(
-                   model_checkpoint, id2label=id2label, label2id=label2id).to(device)
+def compute_objective(metrics: Dict[str, float]) -> float:
+    metrics = copy.deepcopy(metrics)
+    loss = metrics['eval_f5']
+    return loss
 
-    def compute_objective(metrics: Dict[str, float]) -> float:
-        metrics = copy.deepcopy(metrics)
-        loss = metrics['eval_f5']
-        return loss
 
-    args = TrainingArguments(
-        disable_tqdm=False,
-        output_dir=f"bert-finetune-ner_{i}", 
-        evaluation_strategy="epoch", # "epoch", "no"
-        # eval_steps=1000,
-        fp16=True,
-        save_strategy="no",
-        per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
-        per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-        # learning_rate=learning_rate,
-        # num_train_epochs=num_train_epochs,
-        # load_best_model_at_end=True,
-        weight_decay=0.01,
-        push_to_hub=False,
-        report_to="none",
-        log_level="error",
-    )
+# https://huggingface.co/docs/transformers/en/hpo_train
 
-    trainer = Trainer(
-        model=None,
-        args=args,
-        train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
-        compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
-        model_init=model_init,
-        data_collator=data_collator,
-    )
-    #############################################################
+args = TrainingArguments(
+    disable_tqdm=False,
+    output_dir="bert-finetune-ner", 
+    evaluation_strategy="epoch", # "epoch", "no"
+    # eval_steps=1000,
+    fp16=True,
+    save_strategy="no",
+    per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
+    per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
+    # learning_rate=2e-5,
+    # num_train_epochs=3,
+    # load_best_model_at_end=True,
+    # weight_decay=0.01,
+    push_to_hub=False,
+    report_to="none",
+    log_level="error",
+)
 
-    best_trails = trainer.hyperparameter_search(
-        direction="maximize",
-        backend="optuna",
-        hp_space=optuna_hp_space,
-        n_trials=20,
-        compute_objective=compute_objective
-    )
+all_train_dataset = tokenized_datasets['train']
+dataset_index = [i for i in range(len(all_train_dataset))]
+train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
+valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
+train_dataset = all_train_dataset.select(train_index)
+valid_dataset = all_train_dataset.select(valid_index)
 
-    print(best_trails)
-    
-    # break from Group K Fold
-    break
+trainer = Trainer(
+    model=None,
+    args=args,
+    train_dataset=train_dataset,
+    eval_dataset=valid_dataset,
+    compute_metrics=compute_metrics,
+    tokenizer=tokenizer,
+    model_init=model_init,
+    data_collator=data_collator,
+)
+
+best_trails = trainer.hyperparameter_search(
+    direction="maximize",
+    backend="optuna",
+    hp_space=optuna_hp_space,
+    n_trials=2,
+    compute_objective=compute_objective
+)
+
+print(best_trails)
