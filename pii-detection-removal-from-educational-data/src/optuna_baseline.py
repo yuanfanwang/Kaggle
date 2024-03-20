@@ -271,7 +271,6 @@ def compute_metrics(eval_preds):
     }
 
 def optuna_hp_space(trial):
-    print(f"in optuna_hp_space: {type(trial)}")
     # OPTUNA: learning_rate, num_train_epochs, weight_decay
     return {
         "learning_rate": trial.suggest_float("learning_rate", 1e-8, 1e-4), # 2e-5  as default
@@ -281,8 +280,6 @@ def optuna_hp_space(trial):
     }
 
 def model_init(trial):
-    print(f"in model_init: {type(trial)}")
-    # OPTUNA: learning_rate, num_train_epochs, weight_decay
     config = AutoConfig.from_pretrained(model_checkpoint)
     # OPTUNA: hidden_dropout_prob, attention_probs_dropout_prob
     if trial is not None:
