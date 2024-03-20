@@ -293,7 +293,11 @@ valid_dataset = all_train_dataset.select(valid_index)
 config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
 model = AutoModelForTokenClassification.from_pretrained(model_checkpoint, config=config).to(device)
 
-trainer = Trainer(
+class CustomTrainer(Trainer):
+    def __init__(self, *args, **kwargs):
+       super().__init__(*args, **kwargs)
+
+trainer = CustomTrainer(
     model=model,
     args=args,
     train_dataset=train_dataset,
