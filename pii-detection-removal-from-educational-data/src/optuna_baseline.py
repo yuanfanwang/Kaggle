@@ -271,18 +271,19 @@ def compute_metrics(eval_preds):
     }
 
 def optuna_hp_space(trial):
+    # OPTUNA: learning_rate, num_train_epochs, weight_decay
     return {
-        "learning_rate": trial.suggest_float("learning_rate", 1e-8, 1e-4),
-        "num_train_epochs": trial.suggest_int("num_train_epochs", 1, 5),
-        "weight_decay": trial.suggest_float("weight_decay", 1e-3, 1e-1),
+        "learning_rate": trial.suggest_float("learning_rate", 1e-8, 1e-4), # 2e-5  as default
+        "num_train_epochs": trial.suggest_int("num_train_epochs", 1, 5),   # 3     as default
+        "weight_decay": trial.suggest_float("weight_decay", 1e-3, 1e-1),   # 0.01  as default
+        # "optimizer": "AdamW",
     }
 
 def model_init(trial):
     config = AutoConfig.from_pretrained(model_checkpoint)
-    # hidden_dropout_prob: 0.1 as default
-    # attention_probs_dropout_prob: 0.1 as default
-    # print("hidden_dropout_prob: ", config.hidden_dropout_prob)
-    # print("attention_probs_dropout_prob: ", config.hidden_dropout_prob)
+    # OPTUNA: hidden_dropout_prob, attention_probs_dropout_prob
+    config.hidden_dropout_prob = trial.suggest_float("hidden_dropout_prob", 1e-2, 1.0)                   # 0.1 as default
+    config.attention_probs_dropout_prob = trial.suggest_float("attention_probs_dropout_prob", 1e-2, 1.0) # 0.1 as default
     return AutoModelForTokenClassification.from_pretrained(
                model_checkpoint, id2label=id2label, label2id=label2id).to(device)
 
@@ -297,16 +298,11 @@ def compute_objective(metrics: Dict[str, float]) -> float:
 args = TrainingArguments(
     disable_tqdm=False,
     output_dir="bert-finetune-ner", 
-    evaluation_strategy="epoch", # "epoch", "no"
-    # eval_steps=1000,
+    evaluation_strategy="epoch",
     fp16=True,
     save_strategy="no",
     per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
     per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-    # learning_rate=2e-5,
-    # num_train_epochs=3,
-    # load_best_model_at_end=True,
-    # weight_decay=0.01,
     push_to_hub=False,
     report_to="none",
     log_level="error",
@@ -334,8 +330,12 @@ best_trails = trainer.hyperparameter_search(
     direction="maximize",
     backend="optuna",
     hp_space=optuna_hp_space,
-    n_trials=2,
+    n_trials=50,
     compute_objective=compute_objective
 )
 
+
+# classes = ['SGD', 'Adagrad', 'RMSprop', 'Adadelta', 'Adam', 'AdamW']
+# weight decay is the parameter for AdamW
+# when sould I use suggest_categorical to choose optimizer?
 print(best_trails)
