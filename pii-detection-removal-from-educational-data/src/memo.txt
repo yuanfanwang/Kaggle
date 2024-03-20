@@ -31,6 +31,9 @@ optuna
 v3.0
 create a loss function suitable for the objective function f5
 b5 threthold 0.9
+    able to create a simple custom loss function
+    know the restriction of the custom loss function
+    imprement the f5 loss function meeting the restriction
 
 
 
@@ -51,6 +54,7 @@ enable google colab to use optuna
 
 
 v6.0
+read the tips for improve the model in LLM competitions
 consider trailing_whitespace
 LSTM
 /n/n -> to some special token like [KAIGYO]
