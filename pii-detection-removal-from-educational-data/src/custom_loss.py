@@ -2,31 +2,34 @@
 !pip install "/kaggle/input/seqeval/seqeval-1.2.2-py3-none-any.whl"
 """
 
-
+import copy
+import optuna
 import os
 import random
 import sys
+import torch
 
 import numpy as np
 import pandas as pd
 import polars as pl
-import torch
+
 from datasets import Dataset, DatasetDict
-from seqeval.metrics import (accuracy_score, f1_score, precision_score,
-                             recall_score)
 from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
-from transformers import (AutoModelForTokenClassification, AutoTokenizer,
-                          DataCollatorForTokenClassification, Trainer,
-                          TrainingArguments)
+from transformers import AutoTokenizer, DataCollatorForTokenClassification, AutoConfig,\
+                         AutoModelForTokenClassification, TrainingArguments, Trainer
+from typing import Dict
+from seqeval.metrics import precision_score, recall_score, accuracy_score, f1_score
 
 
 class CFG:
-    sample_data_size = 100
+    local = False
+    sample_data_size = None
     batch_size = 1
     token_max_length = 1024
     epoch = 3
     fold = 4
+    downsampling = True
 
 # set random seed
 def seed_everything(seed: int):
@@ -44,9 +47,7 @@ torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
-Local = False
-if Local:
+if CFG.local:
     data_path = "data/"
     model_checkpoint = "microsoft/deberta-v3-base"
 else:
@@ -194,10 +195,11 @@ def split_below_max_length(df: pl.DataFrame):
 
 
 def make_train_dataset():
-    train_df = pl.read_json(data_path + "train.json") \
-                 .filter(pl.col('labels').map_elements(lambda x: not all(label == 'O' for label in x))) \
-                 .to_pandas()
-    train_df = train_df[:CFG.sample_data_size]
+    train_df = pl.read_json(data_path + "train.json")
+    if CFG.downsampling:
+        train_df = train_df.filter(pl.col('labels').map_elements(lambda x: not all(label == 'O' for label in x)))
+    train_df = train_df.to_pandas()
+    if CFG.sample_data_size: train_df = train_df[:CFG.sample_data_size]
     train_dataset = Dataset.from_pandas(train_df)
     train_dataset = train_dataset.map(
         tokenize_and_align_labels,
@@ -267,95 +269,35 @@ def compute_metrics(eval_preds):
         "f5": f_score(precision_score(true_labels, true_predictions), recall_score(true_labels, true_predictions), 5),
         "accuracy": accuracy_score(true_labels, true_predictions),
     }
+args = TrainingArguments(
+    disable_tqdm=False,
+    output_dir="bert-finetune-ner", 
+    evaluation_strategy="epoch",
+    fp16=True,
+    save_strategy="no",
+    per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
+    per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
+    push_to_hub=False,
+    report_to="none",
+    log_level="error",
+)
 
+all_train_dataset = tokenized_datasets['train']
+dataset_index = [i for i in range(len(all_train_dataset))]
+train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
+valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
+train_dataset = all_train_dataset.select(train_index)
+valid_dataset = all_train_dataset.select(valid_index)
 
-best_f5_score = -1.0
-best_trainer = None
-gkf = GroupKFold(n_splits=CFG.fold)
-gkf_dataset = gkf.split(X=tokenized_datasets['train'],
-                        y=tokenized_datasets['train']['labels'],
-                        groups=tokenized_datasets['train']['fold'])
-for i, (train_index, valid_index) in enumerate(gkf_dataset):
-    print(f"\nFold {i}")
-    train_dataset = tokenized_datasets['train'].select(train_index)    
-    valid_dataset = tokenized_datasets['train'].select(valid_index)
+trainer = Trainer(
+    model=None,
+    args=args,
+    train_dataset=train_dataset,
+    eval_dataset=valid_dataset,
+    compute_metrics=compute_metrics,
+    tokenizer=tokenizer,
+    data_collator=data_collator,
+)
 
-    model = AutoModelForTokenClassification.from_pretrained(
-        model_checkpoint, id2label=id2label, label2id=label2id).to(device)
-
-    args = TrainingArguments(
-        disable_tqdm=False,
-        output_dir=f"bert-finetune-ner_{i}", 
-        evaluation_strategy="steps", # "epoch"
-        eval_steps=1000,
-        fp16=True,
-        save_strategy="no",
-        per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
-        per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-        learning_rate=2e-5,
-        num_train_epochs=CFG.epoch,
-        # load_best_model_at_end=True,
-        weight_decay=0.01,
-        push_to_hub=False,
-        report_to="none",
-        log_level="error",
-    )
-
-    trainer = Trainer(
-        model=model,
-        args=args,
-        train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
-        data_collator=data_collator,
-        compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
-    )
-
-    # train model
-    trainer.train()
-
-    # evaluate model with valid dataset to get the best model
-    eval_result = trainer.evaluate()
-    print(f"f5: {eval_result['eval_f5']}")
-
-    # TODO: for ansamble (but this process takes about 20min if the size of the test dataset is 20,000.)
-    # prediction = trainer.predict(tokenized_datasets['test'])
-    # label_predictions = np.argmax(prediction.predictions, axis=-1)
-
-    if best_f5_score < eval_result['eval_f5']:
-        best_f5_score = eval_result['eval_f5']
-        best_trainer = trainer
-
-
-# predict labels 
-test_datasets     = tokenized_datasets['test']
-prediction        = best_trainer.predict(test_datasets)  # PredictionOutput Object
-label_predictions = np.argmax(prediction.predictions, axis=-1)  # (data_size, token max length)
-
-# create submission file
-row_id_sub, document_sub, token_sub, label_sub = [], [], [], []
-test_df = pd.DataFrame(test_datasets)
-for i, labels in enumerate(label_predictions):
-    word_ids = test_df.at[i, 'word_ids']
-    document = test_df.at[i, 'document']
-    current_id = None
-    for j, (pii_idx, word_id) in enumerate(zip(labels, word_ids)):
-        if word_id == None: continue
-        if current_id != word_id:
-            current_id = word_id
-            if pii_idx != 0:
-                row_id_sub.append(len(row_id_sub))
-                document_sub.append(document)
-                token_sub.append(word_id)
-                label_sub.append(label_names[pii_idx])
-
-submission = {
-    'row_id': row_id_sub,
-    'document': document_sub,
-    'token': token_sub,
-    'label': label_sub
-}
-
-submission = pd.DataFrame(submission)
-print(submission.head())
-submission.to_csv("submission.csv", index=False)
+# train model
+trainer.train()

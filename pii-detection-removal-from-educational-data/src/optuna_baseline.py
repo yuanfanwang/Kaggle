@@ -280,13 +280,12 @@ def optuna_hp_space(trial):
     }
 
 def model_init(trial):
-    config = AutoConfig.from_pretrained(model_checkpoint)
+    config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
     # OPTUNA: hidden_dropout_prob, attention_probs_dropout_prob
     if trial is not None:
         config.hidden_dropout_prob = trial.suggest_float("hidden_dropout_prob", 1e-2, 1.0)                   # 0.1 as default
         config.attention_probs_dropout_prob = trial.suggest_float("attention_probs_dropout_prob", 1e-2, 1.0) # 0.1 as default
-    return AutoModelForTokenClassification.from_pretrained(
-               model_checkpoint, id2label=id2label, label2id=label2id).to(device)
+    return AutoModelForTokenClassification.from_pretrained(model_checkpoint, config=config).to(device)
 
 def compute_objective(metrics: Dict[str, float]) -> float:
     metrics = copy.deepcopy(metrics)
