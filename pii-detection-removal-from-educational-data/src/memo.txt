@@ -27,8 +27,11 @@ optuna
     3. classificate the process of optuna to enable the optuna to select the best parameter whenever I want to
 
 
+
 v3.0
-enable google colab to use optuna
+create a loss function suitable for the objective function f5
+b5 threthold 0.9
+
 
 
 v4.0
@@ -41,9 +44,10 @@ create new dataset to make oputuna to select the best parameter more practically
 then, optuna again
 
 
+
 v5.0
-create a loss function suitable for the objective function f5
-b5 threthold 0.9
+enable google colab to use optuna
+
 
 
 v6.0
@@ -54,6 +58,7 @@ LSTM
 avarage the result of each fold
 weighted avarage the result of each fold
 input min, av, max, std to LGBM
+
 
 
 v6.5
@@ -71,12 +76,10 @@ optuna again
         . max_length
     
 
+
 v7.0
 find the other model to ansamble
     gemma
-
-
-
 
 
 
