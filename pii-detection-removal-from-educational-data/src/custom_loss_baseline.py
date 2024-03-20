@@ -269,6 +269,7 @@ def compute_metrics(eval_preds):
         "f5": f_score(precision_score(true_labels, true_predictions), recall_score(true_labels, true_predictions), 5),
         "accuracy": accuracy_score(true_labels, true_predictions),
     }
+
 args = TrainingArguments(
     disable_tqdm=False,
     output_dir="bert-finetune-ner", 
@@ -289,8 +290,11 @@ valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
 train_dataset = all_train_dataset.select(train_index)
 valid_dataset = all_train_dataset.select(valid_index)
 
+config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
+model = AutoModelForTokenClassification.from_pretrained(model_checkpoint, config=config).to(device)
+
 trainer = Trainer(
-    model=None,
+    model=model,
     args=args,
     train_dataset=train_dataset,
     eval_dataset=valid_dataset,
