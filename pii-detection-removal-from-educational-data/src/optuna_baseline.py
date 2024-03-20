@@ -334,7 +334,7 @@ best_trails = trainer.hyperparameter_search(
     compute_objective=compute_objective
 )
 
-
+# https://rightcode.co.jp/blog/information-technology/torch-optim-optimizer-compare-and-verify-update-process-and-performance-of-optimization-methods
 # classes = ['SGD', 'Adagrad', 'RMSprop', 'Adadelta', 'Adam', 'AdamW']
 # weight decay is the parameter for AdamW
 # when sould I use suggest_categorical to choose optimizer?
