@@ -306,16 +306,21 @@ class SoftF5Loss(nn.Module):
         # labels:  [token_len]
         # loss  :  []
 
-        # adjust labels size to logits size
+        # adjust labels size to logits size [token_len] -> [token_len, num_labels]
         one_hot_labels = torch.zeros_like(logits)
         for i, target in enumerate(labels):
-            # Since -100 is for special token, it should be skiped
+            # Since -100 is special token, it must be skiped
             if target == -100:
                 continue
             one_hot_labels[i][target] = 1 
 
+        # TODO: need to normalize probs?. Why I think so is that
+        #       it is intuitive that each of the 15 labels has a probability, and summing them all together yields 1.
         probs = torch.sigmoid(logits)
-        print("sum: ", torch.sum(probs[0]))
+
+        # remove first and end to avoid special token -100
+        probs = probs[1:-1]
+        one_hot_labels = one_hot_labels[1:-1]
 
         # Calculate F5
         tp = torch.sum(probs * one_hot_labels, dim=0)
@@ -325,7 +330,8 @@ class SoftF5Loss(nn.Module):
         soft_f5 = (1 + 5**2)*tp / ((5**2)*tp + fn + fp + self.smooth)
         cost = 1 - soft_f5 # subtract from 1 to get cost
 
-        return cost.mean() # return mean of cost
+        # TODO: mean or sum?
+        return cost.mean()
 
 
 class CustomTrainer(Trainer):

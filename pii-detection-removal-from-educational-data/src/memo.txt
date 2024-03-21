@@ -27,7 +27,6 @@ optuna
     3. classificate the process of optuna to enable the optuna to select the best parameter whenever I want to
 
 
-
 v3.0
 create a loss function suitable for the objective function f5
 b5 threthold 0.9
@@ -36,6 +35,9 @@ b5 threthold 0.9
     imprement the f5 loss function meeting the restriction
     不均衡データ 適切な重み付け　または　訓練データを均衡にしする　適切な重み付けをしたときの訓練データの均衡度の調整が必要になったりする？   
 
+    1. handle -100
+    2. each sum of probs must be 1?
+    3. merge CostomTrainer and CostomLoss to main
 
 
 v4.0
