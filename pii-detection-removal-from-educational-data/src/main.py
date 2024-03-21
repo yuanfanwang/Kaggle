@@ -10,11 +10,13 @@ https://www.kaggle.com/code/sohaibahmed9920/pii-data-prep-eda-fix-punctuation-or
 import os
 import random
 import sys
+import torch
 
 import numpy as np
 import pandas as pd
 import polars as pl
-import torch
+import torch.nn as nn
+
 from datasets import Dataset, DatasetDict
 from seqeval.metrics import (accuracy_score, f1_score, precision_score,
                              recall_score)
@@ -273,6 +275,57 @@ def compute_metrics(eval_preds):
     }
 
 
+class SoftF5Loss(nn.Module):
+    def __init__(self, smooth=1e-16):
+        super(SoftF5Loss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, logits, labels):
+        # logits:  [token_len, num_labels]
+        # labels:  [token_len]
+        # loss  :  []
+
+        # adjust labels size to logits size [token_len] -> [token_len, num_labels]
+        one_hot_labels = torch.zeros_like(logits)
+        for i, target in enumerate(labels):
+            # Since -100 is special token, it must be skiped
+            if target == -100:
+                continue
+            one_hot_labels[i][target] = 1 
+
+        # TODO: need to normalize probs?. Why I think so is that
+        #       it is intuitive that each of the 15 labels has a probability, and summing them all together yields 1.
+        probs = torch.sigmoid(logits)
+
+        # remove first and end to avoid special token -100
+        probs = probs[1:-1]
+        one_hot_labels = one_hot_labels[1:-1]
+
+        # Calculate F5
+        tp = torch.sum(probs * one_hot_labels, dim=0)
+        fp = torch.sum(probs * (1 - one_hot_labels), dim=0)
+        fn = torch.sum((1 - probs) * one_hot_labels, dim=0)
+
+        soft_f5 = (1 + 5**2)*tp / ((5**2)*tp + fn + fp + self.smooth)
+        cost = 1 - soft_f5 # subtract from 1 to get cost
+
+        # TODO: mean or sum?
+        return cost.mean()
+
+
+class CustomTrainer(Trainer):
+    def __init__(self, *args, **kwargs):
+       super().__init__(*args, **kwargs)
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        outputs = model(**inputs)
+        loss_fct = SoftF5Loss()  # nn.CrossEntropyLoss() for default
+        labels = inputs.pop("labels").view(-1)
+        logits = outputs.get('logits').view(-1, self.model.config.num_labels)
+        loss = loss_fct(logits, labels)
+        return (loss, outputs) if return_outputs else loss
+
+
 best_f5_score = -1.0
 best_trainer = None
 gkf = GroupKFold(n_splits=CFG.fold)
@@ -305,7 +358,7 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
         log_level="error",
     )
 
-    trainer = Trainer(
+    trainer = CustomTrainer(
         model=model,
         args=args,
         train_dataset=train_dataset,
