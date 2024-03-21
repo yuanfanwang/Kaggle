@@ -34,6 +34,7 @@ b5 threthold 0.9
     able to create a simple custom loss function
     know the restriction of the custom loss function
     imprement the f5 loss function meeting the restriction
+    不均衡データ 適切な重み付け　または　訓練データを均衡にしする　適切な重み付けをしたときの訓練データの均衡度の調整が必要になったりする？   
 
 
 

@@ -1,7 +1,11 @@
-"""
+""" install offline
 !pip install "/kaggle/input/seqeval/seqeval-1.2.2-py3-none-any.whl"
 """
 
+""" beneficial links
+https://www.kaggle.com/code/samsay23/pii-notebook-generalization-with-score-0-966
+https://www.kaggle.com/code/sohaibahmed9920/pii-data-prep-eda-fix-punctuation-orig-ext/notebook
+"""
 
 import os
 import random
