@@ -302,13 +302,25 @@ class SoftF5Loss(nn.Module):
         self.smooth = smooth
 
     def forward(self, logits, labels):
+        # logits:  [token_len, num_labels]
+        # labels:  [token_len]
+        # loss  :  []
+
+        # adjust labels size to logits size
+        one_hot_labels = torch.zeros_like(logits)
+        for i, target in enumerate(labels):
+            # Since -100 is for special token, it should be skiped
+            if target == -100:
+                continue
+            one_hot_labels[i][target] = 1 
+
         probs = torch.sigmoid(logits)
         print("sum: ", torch.sum(probs[0]))
-        
+
         # Calculate F5
-        tp = torch.sum(probs * labels, dim=0)
-        fp = torch.sum(probs * (1 - labels), dim=0)
-        fn = torch.sum((1 - probs) * labels, dim=0)
+        tp = torch.sum(probs * one_hot_labels, dim=0)
+        fp = torch.sum(probs * (1 - one_hot_labels), dim=0)
+        fn = torch.sum((1 - probs) * one_hot_labels, dim=0)
 
         soft_f5 = (1 + 5**2)*tp / ((5**2)*tp + fn + fp + self.smooth)
         cost = 1 - soft_f5 # subtract from 1 to get cost
@@ -321,44 +333,11 @@ class CustomTrainer(Trainer):
        super().__init__(*args, **kwargs)
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        # labels.shape = (batch_size, token_len) e.g. (1, 750)
-        if "labels" in inputs:
-            labels = inputs.pop("labels")
-            labels = labels.view(-1)
-        else:
-            labels = None
-
         outputs = model(**inputs)
-        # logits.shape = (batch_size, token_len, num_labels) e.g. (1, 750, 15)
-        logits = outputs.get('logits')
-        logits = logits.view(-1, self.model.config.num_labels).to(device)
-        """ smaple
-        loss_fct = nn.CrossEntropyLoss()
-        # logits:  <class 'torch.Tensor'> torch.Size([750, 15])
-        # labels:  <class 'torch.Tensor'> torch.Size([750])
-        # loss  :  <class 'torch.Tensor'> torch.Size([])
-        """
-
-        # """ f5 loss
-        loss_fct = SoftF5Loss()
-        # Since -100 is for special token, it should be skiped
-        # (token_len) -> (token_len, num_labels)
-        one_hot_labels = torch.zeros(labels.shape[0], self.model.config.num_labels)
-        print("one_hot_labels: ", one_hot_labels.shape)
-        for i, target in enumerate(labels):
-            if target == -100:
-                continue
-            one_hot_labels[i][target] = 1
-        labels = one_hot_labels.to(device)
-
-        # logits:  <class 'torch.Tensor'> torch.Size([750, 15])
-        # labels:  <class 'torch.Tensor'> torch.Size([750])
-        # loss  :  <class 'torch.Tensor'> torch.Size([]) ?
-        # """
-        print("logits: ", type(logits), logits.shape)
-        print("labels: ", type(labels), labels.shape)
+        loss_fct = SoftF5Loss()  # nn.CrossEntropyLoss() for default
+        labels = inputs.pop("labels").view(-1)
+        logits = outputs.get('logits').view(-1, self.model.config.num_labels)
         loss = loss_fct(logits, labels)
-        print("loss  : ", type(loss), loss.shape)
         return (loss, outputs) if return_outputs else loss
 
 
