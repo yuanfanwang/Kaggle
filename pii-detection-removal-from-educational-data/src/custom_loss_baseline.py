@@ -12,6 +12,7 @@ import torch
 import numpy as np
 import pandas as pd
 import polars as pl
+import torch.nn as nn
 
 from datasets import Dataset, DatasetDict
 from sklearn.model_selection import GroupKFold
@@ -293,9 +294,46 @@ valid_dataset = all_train_dataset.select(valid_index)
 config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
 model = AutoModelForTokenClassification.from_pretrained(model_checkpoint, config=config).to(device)
 
+
+"""
+# https://towardsdatascience.com/the-unknown-benefits-of-using-a-soft-f1-loss-in-classification-systems-753902c0105d
+class SoftF5Loss(nn.Module):
+    def __init__(self, smooth=1e-2):
+        super(SoftF5Loss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, logits, labels):
+        # Apply sigmoid to logits
+        probs = torch.sigmoid(logits)
+        
+        # Calculate F5
+        tp = torch.sum(probs * labels, dim=0)
+        fp = torch.sum(probs * (1 - labels), dim=0)
+        fn = torch.sum((1 - probs) * labels, dim=0)
+
+        soft_f5 = (1 + 5**2)*tp / ((5**2)*tp + fn + fp + self.smooth)
+        cost = 1 - soft_f5 # subtract from 1 to get cost
+
+        return cost.mean() # return mean of cost
+"""
+
+
 class CustomTrainer(Trainer):
     def __init__(self, *args, **kwargs):
        super().__init__(*args, **kwargs)
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        if "labels" in inputs:
+            labels = inputs.pop("labels")
+        else:
+            labels = None
+        outputs = model(**inputs)
+        logits = outputs.get('logits')
+        loss_fct = nn.CrossEntropyLoss()
+        loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
+        # loss_f5 = SoftF5Loss()(logits, labels)
+        return (loss, outputs) if return_outputs else loss
+
 
 trainer = CustomTrainer(
     model=model,
