@@ -295,16 +295,15 @@ config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2i
 model = AutoModelForTokenClassification.from_pretrained(model_checkpoint, config=config).to(device)
 
 
-"""
 # https://towardsdatascience.com/the-unknown-benefits-of-using-a-soft-f1-loss-in-classification-systems-753902c0105d
 class SoftF5Loss(nn.Module):
-    def __init__(self, smooth=1e-2):
+    def __init__(self, smooth=1e-16):
         super(SoftF5Loss, self).__init__()
         self.smooth = smooth
 
     def forward(self, logits, labels):
-        # Apply sigmoid to logits
         probs = torch.sigmoid(logits)
+        print("sum: ", torch.sum(probs[0]))
         
         # Calculate F5
         tp = torch.sum(probs * labels, dim=0)
@@ -315,7 +314,6 @@ class SoftF5Loss(nn.Module):
         cost = 1 - soft_f5 # subtract from 1 to get cost
 
         return cost.mean() # return mean of cost
-"""
 
 
 class CustomTrainer(Trainer):
@@ -323,15 +321,44 @@ class CustomTrainer(Trainer):
        super().__init__(*args, **kwargs)
 
     def compute_loss(self, model, inputs, return_outputs=False):
+        # labels.shape = (batch_size, token_len) e.g. (1, 750)
         if "labels" in inputs:
             labels = inputs.pop("labels")
+            labels = labels.view(-1)
         else:
             labels = None
+
         outputs = model(**inputs)
+        # logits.shape = (batch_size, token_len, num_labels) e.g. (1, 750, 15)
         logits = outputs.get('logits')
+        logits = logits.view(-1, self.model.config.num_labels).to(device)
+        """ smaple
         loss_fct = nn.CrossEntropyLoss()
-        loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
-        # loss_f5 = SoftF5Loss()(logits, labels)
+        # logits:  <class 'torch.Tensor'> torch.Size([750, 15])
+        # labels:  <class 'torch.Tensor'> torch.Size([750])
+        # loss  :  <class 'torch.Tensor'> torch.Size([])
+        """
+
+        # """ f5 loss
+        loss_fct = SoftF5Loss()
+        # Since -100 is for special token, it should be skiped
+        # (token_len) -> (token_len, num_labels)
+        one_hot_labels = torch.zeros(labels.shape[0], self.model.config.num_labels)
+        print("one_hot_labels: ", one_hot_labels.shape)
+        for i, target in enumerate(labels):
+            if target == -100:
+                continue
+            one_hot_labels[i][target] = 1
+        labels = one_hot_labels.to(device)
+
+        # logits:  <class 'torch.Tensor'> torch.Size([750, 15])
+        # labels:  <class 'torch.Tensor'> torch.Size([750])
+        # loss  :  <class 'torch.Tensor'> torch.Size([]) ?
+        # """
+        print("logits: ", type(logits), logits.shape)
+        print("labels: ", type(labels), labels.shape)
+        loss = loss_fct(logits, labels)
+        print("loss  : ", type(loss), loss.shape)
         return (loss, outputs) if return_outputs else loss
 
 
