@@ -410,38 +410,10 @@ def train_model_simple():
     train_dataset = all_train_dataset.select(train_index)
     valid_dataset = all_train_dataset.select(valid_index)
 
-    args = TrainingArguments(
-        disable_tqdm=False,
-        output_dir=f"bert-finetune-ner_{i}", 
-        ## output_dir=f"bert-finetune-ner", 
-        evaluation_strategy="steps",                #--
-        ## evaluation_strategy="epoch"
-        eval_steps=1000,                            #--
-        fp16=True,
-        save_strategy="no",
-        per_device_train_batch_size=CFG.batch_size,
-        per_device_eval_batch_size=CFG.batch_size,
-        learning_rate=2e-5,                         #--
-        num_train_epochs=CFG.epoch,                 #--
-        # load_best_model_at_end=True,
-        weight_decay=0.01,                          #--
-        push_to_hub=False,
-        report_to="none",
-        log_level="error",
-    )
-
-    trainer = CustomTrainer(
-        model_init=model_init,
-        args=args,
-        train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
-        data_collator=data_collator,
-        compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
-    )
-
-    # train model
+    trainer = create_trainer(train_dataset, valid_dataset, "")
     trainer.train()
+
+    return trainer
 
 
 def train_model_kfold():
@@ -456,37 +428,7 @@ def train_model_kfold():
         train_dataset = tokenized_datasets['train'].select(train_index)    
         valid_dataset = tokenized_datasets['train'].select(valid_index)
 
-        args = TrainingArguments(
-            disable_tqdm=False,
-            output_dir=f"bert-finetune-ner_{i}", 
-            ## output_dir=f"bert-finetune-ner", 
-            evaluation_strategy="steps",           #--
-            ## evaluation_strategy="epoch"
-            eval_steps=1000,                       #--
-            fp16=True,
-            save_strategy="no",
-            per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
-            per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-            learning_rate=2e-5,                    #--
-            num_train_epochs=CFG.epoch,            #--
-            # load_best_model_at_end=True,
-            weight_decay=0.01,                     #--
-            push_to_hub=False,
-            report_to="none",
-            log_level="error",
-        )
-
-        trainer = CustomTrainer(
-            model_init=model_init,
-            args=args,
-            train_dataset=train_dataset,
-            eval_dataset=valid_dataset,
-            data_collator=data_collator,
-            compute_metrics=compute_metrics,
-            tokenizer=tokenizer,
-        )
-
-        # train model
+        trainer = create_trainer(train_dataset, valid_dataset, i)
         trainer.train()
 
         # evaluate model with valid dataset to get the best model
@@ -496,7 +438,6 @@ def train_model_kfold():
         # TODO: for ansamble (but this process takes about 20min if the size of the test dataset is 20,000.)
         # prediction = trainer.predict(tokenized_datasets['test'])
         # label_predictions = np.argmax(prediction.predictions, axis=-1)
-
         if best_f5_score < eval_result['eval_f5']:
             best_f5_score = eval_result['eval_f5']
             best_trainer = trainer
@@ -557,7 +498,7 @@ def train_model_optuna():
 ####################### . Main . #######################
 
 trainer = train_model_kfold()
-# trainer = train_model_simple(tokenized_datasets)
+# trainer = train_model_simple()
 # trainer = train_model_optuna(tokenized_datasets
 
 
