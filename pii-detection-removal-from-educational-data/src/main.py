@@ -337,6 +337,7 @@ def optuna_hp_space(trial):
         # "optimizer": "AdamW",
     }
 
+
 def model_init(trial):
     config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
     # OPTUNA: hidden_dropout_prob, attention_probs_dropout_prob
@@ -345,18 +346,59 @@ def model_init(trial):
         config.attention_probs_dropout_prob = trial.suggest_float("attention_probs_dropout_prob", 1e-2, 1.0) # 0.1 as default
     return AutoModelForTokenClassification.from_pretrained(model_checkpoint, config=config).to(device)
 
+
 def compute_objective(metrics: Dict[str, float]) -> float:
     metrics = copy.deepcopy(metrics)
     loss = metrics['eval_f5']
     return loss
 
 
+def create_trainer(train_dataset, valid_dataset, fold=""):
+    args = TrainingArguments(
+        disable_tqdm=False,
+        output_dir=f"bert_fold{fold}", 
+        ## output_dir=f"bert-finetune-ner", 
+        evaluation_strategy="steps",           #--
+        ## evaluation_strategy="epoch"
+        eval_steps=1000,                       #--
+        fp16=True,
+        save_strategy="no",
+        per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
+        per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
+        learning_rate=2e-5,                    #--
+        num_train_epochs=CFG.epoch,            #--
+        # load_best_model_at_end=True,
+        weight_decay=0.01,                     #--
+        push_to_hub=False,
+        report_to="none",
+        log_level="error",
+    )
+    trainer = CustomTrainer(
+        model_init=model_init,
+        args=args,
+        train_dataset=train_dataset,
+        eval_dataset=valid_dataset,
+        data_collator=data_collator,
+        compute_metrics=compute_metrics,
+        tokenizer=tokenizer,
+    )
+    return trainer
 
 
 
+
+
+
+
+####################### . Model . #######################
 tokenizer          = AutoTokenizer.from_pretrained(model_checkpoint)
 tokenized_datasets = make_dataset()
 data_collator      = DataCollatorForTokenClassification(tokenizer=tokenizer)
+
+
+
+
+
 
 
 ####################### . Training . #######################
@@ -371,10 +413,6 @@ def train_model_kfold():
         print(f"\nFold {i}")
         train_dataset = tokenized_datasets['train'].select(train_index)    
         valid_dataset = tokenized_datasets['train'].select(valid_index)
-
-        config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
-        model = AutoModelForTokenClassification.from_pretrained(
-            model_checkpoint, config=config).to(device)
 
         args = TrainingArguments(
             disable_tqdm=False,
@@ -397,7 +435,7 @@ def train_model_kfold():
         )
 
         trainer = CustomTrainer(
-            model=model,
+            model_init=model_init,
             args=args,
             train_dataset=train_dataset,
             eval_dataset=valid_dataset,
@@ -446,13 +484,12 @@ def train_model_optuna():
     valid_dataset = all_train_dataset.select(valid_index)
 
     trainer = Trainer(
-        model=None,
+        model_init=model_init,
         args=args,
         train_dataset=train_dataset,
         eval_dataset=valid_dataset,
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
-        model_init=model_init,
         data_collator=data_collator,
     )
 
@@ -504,7 +541,7 @@ def train_model_simple():
     )
 
     trainer = CustomTrainer(
-        model=model,
+        model_init=model_init,
         args=args,
         train_dataset=train_dataset,
         eval_dataset=valid_dataset,
