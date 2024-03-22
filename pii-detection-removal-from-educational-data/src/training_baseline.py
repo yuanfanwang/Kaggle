@@ -18,7 +18,6 @@ from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, AutoConfig,\
                          AutoModelForTokenClassification, TrainingArguments, Trainer
-from typing import Dict
 from seqeval.metrics import precision_score, recall_score, accuracy_score, f1_score
 
 

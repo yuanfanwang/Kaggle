@@ -46,6 +46,9 @@ v4.0
     1. update refactoring main and raletive files.
     2. run optuna again
     3. submit the result with tuned hyperparameters and the custom loss function
+    4. deberta model 保存方法
+    5. kfoldなしoptuna->kfoldなしmodel保存->submit
+    5. kfoldなしoptuna->kfoldあり全model保存->submit 
 
 
 
