@@ -29,13 +29,35 @@ from typing                  import Dict
 
 ####################### . Config . #######################
 class CFG:
-    local = False
+    ## variable
     sample_data_size = None
+    use_optuna = False
+    train_kwargs = {
+        "evaluation_strategy": "steps",
+        "eval_steps": 1000,
+        "save_strategy": "no",
+        "learning_rate": 2e-5,
+        "num_train_epochs": 3,
+        "weight_decay": 0.01,
+    }
+    optuna_kwargs = {
+        "evaluation_strategy": "epoch",
+        # "eval_steps":
+        "save_strategy": "no",
+        # "learning_rate": 
+        # "num_train_epochs":
+        # "weight_decay":
+        "n_trials": 50,
+    }
+    # parameters are defined in optuna_hp_space and model_init as well
+
+    ## constant
+    local = False
     batch_size = 1
     token_max_length = 1024
-    epoch = 3
     fold = 4
     downsampling = True
+
 
 def seed_everything(seed: int):
     random.seed(seed)
@@ -77,6 +99,10 @@ label_names = [
 ]
 id2label = {str(i): label for i, label in enumerate(label_names)}
 label2id = {label: i for i, label in enumerate(label_names)}
+
+
+
+
 
 
 
@@ -353,25 +379,25 @@ def compute_objective(metrics: Dict[str, float]) -> float:
     return loss
 
 
-def create_trainer(train_dataset, valid_dataset, fold=""):
+def create_trainer(train_dataset, valid_dataset, **kwargs):
     args = TrainingArguments(
+        ## variable
+        output_dir=f"bert_fold{kwargs.get('fold', '')}", 
+        evaluation_strategy=kwargs.get('eval_steps', 'epoch'),
+        eval_steps=kwargs.get('eval_steps', None),
+        save_strategy=kwargs.get('save_strategy', 'no'),
+        learning_rate=kwargs.get('learning_rate', 2e-5),
+        num_train_epochs=kwargs.get('num_train_epochs', 3),
+        weight_decay=kwargs.get('weight_decay', 0.01),
+        ## constant
         disable_tqdm=False,
-        output_dir=f"bert_fold{fold}", 
-        ## output_dir=f"bert-finetune-ner", 
-        evaluation_strategy="steps",           #--
-        ## evaluation_strategy="epoch"
-        eval_steps=1000,                       #--
         fp16=True,
-        save_strategy="no",
-        per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
-        per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-        learning_rate=2e-5,                    #--
-        num_train_epochs=CFG.epoch,            #--
-        # load_best_model_at_end=True,
-        weight_decay=0.01,                     #--
         push_to_hub=False,
         report_to="none",
         log_level="error",
+        per_device_train_batch_size=CFG.batch_size,
+        per_device_eval_batch_size=CFG.batch_size,
+        # load_best_model_at_end=True,
     )
     trainer = CustomTrainer(
         model_init=model_init,
@@ -428,7 +454,8 @@ def train_model_kfold():
         train_dataset = tokenized_datasets['train'].select(train_index)    
         valid_dataset = tokenized_datasets['train'].select(valid_index)
 
-        trainer = create_trainer(train_dataset, valid_dataset, i)
+        CFG.train_kwargs['fold'] = i
+        trainer = create_trainer(train_dataset, valid_dataset, kwargs=CFG.train_kwargs)
         trainer.train()
 
         # evaluate model with valid dataset to get the best model
@@ -446,18 +473,6 @@ def train_model_kfold():
 
 
 def train_model_optuna():
-    args = TrainingArguments(
-        disable_tqdm=False,
-        output_dir="bert-finetune-ner", 
-        evaluation_strategy="epoch",
-        fp16=True,
-        save_strategy="no",
-        per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
-        per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-        push_to_hub=False,
-        report_to="none",
-        log_level="error",
-    )
 
     all_train_dataset = tokenized_datasets['train']
     dataset_index = [i for i in range(len(all_train_dataset))]
@@ -466,21 +481,13 @@ def train_model_optuna():
     train_dataset = all_train_dataset.select(train_index)
     valid_dataset = all_train_dataset.select(valid_index)
 
-    trainer = Trainer(
-        model_init=model_init,
-        args=args,
-        train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
-        compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
-        data_collator=data_collator,
-    )
+    trainer = create_trainer(train_dataset, valid_dataset, kwargs=CFG.optuna_kwargs)
 
     best_trails = trainer.hyperparameter_search(
         direction="maximize",
         backend="optuna",
         hp_space=optuna_hp_space,
-        n_trials=50,
+        n_trials=CFG.optuna_kwargs['n_trials'],
         compute_objective=compute_objective
     )
 
@@ -495,49 +502,53 @@ def train_model_optuna():
 
 
 
+
+
+
+
+
+
+
+
+
 ####################### . Main . #######################
 
-trainer = train_model_kfold()
-# trainer = train_model_simple()
-# trainer = train_model_optuna(tokenized_datasets
+if CFG.use_optuna:
+    train_model_optuna()
+else:
+    trainer = train_model_kfold()  # train_model_simple()
 
+    ####################### . Submission  . #######################
 
+    # predict labels 
+    test_datasets     = tokenized_datasets['test']
+    prediction        = trainer.predict(test_datasets)  # PredictionOutput Object
+    label_predictions = np.argmax(prediction.predictions, axis=-1)  # (data_size, token max length)
 
+    # create submission file
+    row_id_sub, document_sub, token_sub, label_sub = [], [], [], []
+    test_df = pd.DataFrame(test_datasets)
+    for i, labels in enumerate(label_predictions):
+        word_ids = test_df.at[i, 'word_ids']
+        document = test_df.at[i, 'document']
+        current_id = None
+        for j, (pii_idx, word_id) in enumerate(zip(labels, word_ids)):
+            if word_id == None: continue
+            if current_id != word_id:
+                current_id = word_id
+                if pii_idx != 0:
+                    row_id_sub.append(len(row_id_sub))
+                    document_sub.append(document)
+                    token_sub.append(word_id)
+                    label_sub.append(label_names[pii_idx])
 
+    submission = {
+        'row_id': row_id_sub,
+        'document': document_sub,
+        'token': token_sub,
+        'label': label_sub
+    }
 
-
-
-####################### . Submission  . #######################
-
-# predict labels 
-test_datasets     = tokenized_datasets['test']
-prediction        = trainer.predict(test_datasets)  # PredictionOutput Object
-label_predictions = np.argmax(prediction.predictions, axis=-1)  # (data_size, token max length)
-
-# create submission file
-row_id_sub, document_sub, token_sub, label_sub = [], [], [], []
-test_df = pd.DataFrame(test_datasets)
-for i, labels in enumerate(label_predictions):
-    word_ids = test_df.at[i, 'word_ids']
-    document = test_df.at[i, 'document']
-    current_id = None
-    for j, (pii_idx, word_id) in enumerate(zip(labels, word_ids)):
-        if word_id == None: continue
-        if current_id != word_id:
-            current_id = word_id
-            if pii_idx != 0:
-                row_id_sub.append(len(row_id_sub))
-                document_sub.append(document)
-                token_sub.append(word_id)
-                label_sub.append(label_names[pii_idx])
-
-submission = {
-    'row_id': row_id_sub,
-    'document': document_sub,
-    'token': token_sub,
-    'label': label_sub
-}
-
-submission = pd.DataFrame(submission)
-print(submission.head())
-submission.to_csv("submission.csv", index=False)
+    submission = pd.DataFrame(submission)
+    print(submission.head())
+    submission.to_csv("submission.csv", index=False)
