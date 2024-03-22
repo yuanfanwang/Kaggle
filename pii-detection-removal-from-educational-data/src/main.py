@@ -402,6 +402,48 @@ data_collator      = DataCollatorForTokenClassification(tokenizer=tokenizer)
 
 
 ####################### . Training . #######################
+def train_model_simple():
+    all_train_dataset = tokenized_datasets['train']
+    dataset_index = [i for i in range(len(all_train_dataset))]
+    train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
+    valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
+    train_dataset = all_train_dataset.select(train_index)
+    valid_dataset = all_train_dataset.select(valid_index)
+
+    args = TrainingArguments(
+        disable_tqdm=False,
+        output_dir=f"bert-finetune-ner_{i}", 
+        ## output_dir=f"bert-finetune-ner", 
+        evaluation_strategy="steps",                #--
+        ## evaluation_strategy="epoch"
+        eval_steps=1000,                            #--
+        fp16=True,
+        save_strategy="no",
+        per_device_train_batch_size=CFG.batch_size,
+        per_device_eval_batch_size=CFG.batch_size,
+        learning_rate=2e-5,                         #--
+        num_train_epochs=CFG.epoch,                 #--
+        # load_best_model_at_end=True,
+        weight_decay=0.01,                          #--
+        push_to_hub=False,
+        report_to="none",
+        log_level="error",
+    )
+
+    trainer = CustomTrainer(
+        model_init=model_init,
+        args=args,
+        train_dataset=train_dataset,
+        eval_dataset=valid_dataset,
+        data_collator=data_collator,
+        compute_metrics=compute_metrics,
+        tokenizer=tokenizer,
+    )
+
+    # train model
+    trainer.train()
+
+
 def train_model_kfold():
     best_f5_score = -1.0
     best_trainer = None
@@ -508,50 +550,7 @@ def train_model_optuna():
     print(best_trails)
 
 
-def train_model_simple():
-    all_train_dataset = tokenized_datasets['train']
-    dataset_index = [i for i in range(len(all_train_dataset))]
-    train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
-    valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
-    train_dataset = all_train_dataset.select(train_index)
-    valid_dataset = all_train_dataset.select(valid_index)
 
-    config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
-    model = AutoModelForTokenClassification.from_pretrained(
-        model_checkpoint, config=config).to(device)
-
-    args = TrainingArguments(
-        disable_tqdm=False,
-        output_dir=f"bert-finetune-ner_{i}", 
-        ## output_dir=f"bert-finetune-ner", 
-        evaluation_strategy="steps",                #--
-        ## evaluation_strategy="epoch"
-        eval_steps=1000,                            #--
-        fp16=True,
-        save_strategy="no",
-        per_device_train_batch_size=CFG.batch_size,
-        per_device_eval_batch_size=CFG.batch_size,
-        learning_rate=2e-5,                         #--
-        num_train_epochs=CFG.epoch,                 #--
-        # load_best_model_at_end=True,
-        weight_decay=0.01,                          #--
-        push_to_hub=False,
-        report_to="none",
-        log_level="error",
-    )
-
-    trainer = CustomTrainer(
-        model_init=model_init,
-        args=args,
-        train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
-        data_collator=data_collator,
-        compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
-    )
-
-    # train model
-    trainer.train()
 
 
 
