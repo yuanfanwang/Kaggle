@@ -37,7 +37,7 @@ class CFG:
         "eval_steps": 1000,
         "save_strategy": "no",
         "learning_rate": 2e-5,
-        "num_train_epochs": 3,
+        "num_train_epochs": 10,
         "weight_decay": 0.01,
     }
     optuna_kwargs = {
@@ -383,7 +383,7 @@ def create_trainer(train_dataset, valid_dataset, **kwargs):
     args = TrainingArguments(
         ## variable
         output_dir=f"bert_fold{kwargs.get('fold', '')}", 
-        evaluation_strategy=kwargs.get('eval_steps', 'epoch'),
+        evaluation_strategy=kwargs.get('evaluation_strategy', 'epoch'),
         eval_steps=kwargs.get('eval_steps', None),
         save_strategy=kwargs.get('save_strategy', 'no'),
         learning_rate=kwargs.get('learning_rate', 2e-5),
@@ -436,7 +436,7 @@ def train_model_simple():
     train_dataset = all_train_dataset.select(train_index)
     valid_dataset = all_train_dataset.select(valid_index)
 
-    trainer = create_trainer(train_dataset, valid_dataset, "")
+    trainer = create_trainer(train_dataset, valid_dataset, **CFG.train_kwargs)
     trainer.train()
 
     return trainer
@@ -455,7 +455,7 @@ def train_model_kfold():
         valid_dataset = tokenized_datasets['train'].select(valid_index)
 
         CFG.train_kwargs['fold'] = i
-        trainer = create_trainer(train_dataset, valid_dataset, kwargs=CFG.train_kwargs)
+        trainer = create_trainer(train_dataset, valid_dataset, **CFG.train_kwargs)
         trainer.train()
 
         # evaluate model with valid dataset to get the best model
@@ -481,7 +481,7 @@ def train_model_optuna():
     train_dataset = all_train_dataset.select(train_index)
     valid_dataset = all_train_dataset.select(valid_index)
 
-    trainer = create_trainer(train_dataset, valid_dataset, kwargs=CFG.optuna_kwargs)
+    trainer = create_trainer(train_dataset, valid_dataset, **CFG.optuna_kwargs)
 
     best_trails = trainer.hyperparameter_search(
         direction="maximize",
@@ -516,7 +516,8 @@ def train_model_optuna():
 if CFG.use_optuna:
     train_model_optuna()
 else:
-    trainer = train_model_kfold()  # train_model_simple()
+    # trainer = train_model_kfold()
+    trainer = train_model_simple()
 
     ####################### . Submission  . #######################
 
