@@ -59,6 +59,8 @@ v5.0
     validation label 0 ~ 1 それぞれ個別に
     recall model, precision model 作って加重平均とる？
 
+    new_probs
+    tp fp tn costs visualize
 
 v6.0
 enable google colab to use optuna

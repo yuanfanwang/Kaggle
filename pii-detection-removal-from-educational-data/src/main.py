@@ -442,7 +442,7 @@ def create_trainer(train_dataset, valid_dataset, **kwargs):
         output_dir=f"bert_fold{kwargs.get('fold', '')}", 
         evaluation_strategy=kwargs.get('evaluation_strategy', 'epoch'),
         eval_steps=kwargs.get('eval_steps', None),
-        logging_steps=kwargs.get('logging_steps', 500),  # same as eval_steps
+        logging_steps=kwargs.get('logging_steps', 500),
         save_strategy=kwargs.get('save_strategy', 'no'),
         learning_rate=kwargs.get('learning_rate', 2e-5),
         num_train_epochs=kwargs.get('num_train_epochs', 3),
