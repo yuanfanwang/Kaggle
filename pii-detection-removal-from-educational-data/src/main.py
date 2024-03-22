@@ -6,7 +6,8 @@
 https://www.kaggle.com/code/samsay23/pii-notebook-generalization-with-score-0-966
 https://www.kaggle.com/code/sohaibahmed9920/pii-data-prep-eda-fix-punctuation-orig-ext/notebook
 """
-
+import copy
+import optuna
 import os
 import random
 import sys
@@ -23,8 +24,10 @@ from sklearn.model_selection import GroupKFold
 from tqdm                    import tqdm
 from transformers            import (AutoModelForTokenClassification, AutoTokenizer, AutoConfig,
                                      DataCollatorForTokenClassification, Trainer, TrainingArguments)
+from typing                  import Dict
 
 
+####################### . Config . #######################
 class CFG:
     local = False
     sample_data_size = None
@@ -34,7 +37,6 @@ class CFG:
     fold = 4
     downsampling = True
 
-# set random seed
 def seed_everything(seed: int):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -44,12 +46,10 @@ def seed_everything(seed: int):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-# initialize
 seed_everything(seed=42)
 torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 
 if CFG.local:
     data_path = "data/"
@@ -77,6 +77,64 @@ label_names = [
 ]
 id2label = {str(i): label for i, label in enumerate(label_names)}
 label2id = {label: i for i, label in enumerate(label_names)}
+
+
+
+
+
+
+
+####################### . Functions . #######################
+
+class SoftF5Loss(nn.Module):
+    def __init__(self, smooth=1e-16):
+        super(SoftF5Loss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, logits, labels):
+        # logits:  [token_len, num_labels]
+        # labels:  [token_len]
+        # loss  :  []
+
+        # adjust labels size to logits size [token_len] -> [token_len, num_labels]
+        one_hot_labels = torch.zeros_like(logits)
+        for i, target in enumerate(labels):
+            # Since -100 is special token, it must be skiped
+            if target == -100:
+                continue
+            one_hot_labels[i][target] = 1 
+
+        # TODO: need to normalize probs?. Why I think so is that
+        #       it is intuitive that each of the 15 labels has a probability, and summing them all together yields 1.
+        probs = torch.sigmoid(logits)
+
+        # remove first and end to avoid special token -100
+        probs = probs[1:-1]
+        one_hot_labels = one_hot_labels[1:-1]
+
+        # Calculate F5
+        tp = torch.sum(probs * one_hot_labels, dim=0)
+        fp = torch.sum(probs * (1 - one_hot_labels), dim=0)
+        fn = torch.sum((1 - probs) * one_hot_labels, dim=0)
+
+        soft_f5 = (1 + 5**2)*tp / ((5**2)*tp + fn + fp + self.smooth)
+        cost = 1 - soft_f5 # subtract from 1 to get cost
+
+        # TODO: mean or sum?
+        return cost.mean()
+
+
+class CustomTrainer(Trainer):
+    def __init__(self, *args, **kwargs):
+       super().__init__(*args, **kwargs)
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        outputs = model(**inputs)
+        loss_fct = SoftF5Loss()  # nn.CrossEntropyLoss() for default
+        labels = inputs.pop("labels").view(-1)
+        logits = outputs.get('logits').view(-1, self.model.config.num_labels)
+        loss = loss_fct(logits, labels)
+        return (loss, outputs) if return_outputs else loss
 
 
 def align_labels_with_tokens(labels, word_ids):
@@ -247,11 +305,6 @@ def make_dataset():
     return datasets
 
 
-tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
-tokenized_datasets = make_dataset()
-data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
-
-
 def f_score(precision, recall, beta=1):
     epsilon = 1e-7
     return (1 + beta ** 2) * (precision * recall) / (beta ** 2 * precision + recall + epsilon)
@@ -275,74 +328,156 @@ def compute_metrics(eval_preds):
     }
 
 
-class SoftF5Loss(nn.Module):
-    def __init__(self, smooth=1e-16):
-        super(SoftF5Loss, self).__init__()
-        self.smooth = smooth
+def optuna_hp_space(trial):
+    # OPTUNA: learning_rate, num_train_epochs, weight_decay
+    return {
+        "learning_rate": trial.suggest_float("learning_rate", 1e-8, 1e-4), # 2e-5  as default
+        "num_train_epochs": trial.suggest_int("num_train_epochs", 1, 5),   # 3     as default
+        "weight_decay": trial.suggest_float("weight_decay", 1e-3, 1e-1),   # 0.01  as default
+        # "optimizer": "AdamW",
+    }
 
-    def forward(self, logits, labels):
-        # logits:  [token_len, num_labels]
-        # labels:  [token_len]
-        # loss  :  []
+def model_init(trial):
+    config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
+    # OPTUNA: hidden_dropout_prob, attention_probs_dropout_prob
+    if trial is not None:
+        config.hidden_dropout_prob = trial.suggest_float("hidden_dropout_prob", 1e-2, 1.0)                   # 0.1 as default
+        config.attention_probs_dropout_prob = trial.suggest_float("attention_probs_dropout_prob", 1e-2, 1.0) # 0.1 as default
+    return AutoModelForTokenClassification.from_pretrained(model_checkpoint, config=config).to(device)
 
-        # adjust labels size to logits size [token_len] -> [token_len, num_labels]
-        one_hot_labels = torch.zeros_like(logits)
-        for i, target in enumerate(labels):
-            # Since -100 is special token, it must be skiped
-            if target == -100:
-                continue
-            one_hot_labels[i][target] = 1 
-
-        # TODO: need to normalize probs?. Why I think so is that
-        #       it is intuitive that each of the 15 labels has a probability, and summing them all together yields 1.
-        probs = torch.sigmoid(logits)
-
-        # remove first and end to avoid special token -100
-        probs = probs[1:-1]
-        one_hot_labels = one_hot_labels[1:-1]
-
-        # Calculate F5
-        tp = torch.sum(probs * one_hot_labels, dim=0)
-        fp = torch.sum(probs * (1 - one_hot_labels), dim=0)
-        fn = torch.sum((1 - probs) * one_hot_labels, dim=0)
-
-        soft_f5 = (1 + 5**2)*tp / ((5**2)*tp + fn + fp + self.smooth)
-        cost = 1 - soft_f5 # subtract from 1 to get cost
-
-        # TODO: mean or sum?
-        return cost.mean()
+def compute_objective(metrics: Dict[str, float]) -> float:
+    metrics = copy.deepcopy(metrics)
+    loss = metrics['eval_f5']
+    return loss
 
 
-class CustomTrainer(Trainer):
-    def __init__(self, *args, **kwargs):
-       super().__init__(*args, **kwargs)
-
-    def compute_loss(self, model, inputs, return_outputs=False):
-        outputs = model(**inputs)
-        loss_fct = SoftF5Loss()  # nn.CrossEntropyLoss() for default
-        labels = inputs.pop("labels").view(-1)
-        logits = outputs.get('logits').view(-1, self.model.config.num_labels)
-        loss = loss_fct(logits, labels)
-        return (loss, outputs) if return_outputs else loss
 
 
-all_train_dataset = tokenized_datasets['train']
-dataset_index = [i for i in range(len(all_train_dataset))]
-train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
-valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
-train_dataset = all_train_dataset.select(train_index)
-valid_dataset = all_train_dataset.select(valid_index)
 
-best_f5_score = -1.0
-best_trainer = None
-gkf = GroupKFold(n_splits=CFG.fold)
-gkf_dataset = gkf.split(X=tokenized_datasets['train'],
-                        y=tokenized_datasets['train']['labels'],
-                        groups=tokenized_datasets['train']['fold'])
-for i, (train_index, valid_index) in enumerate(gkf_dataset):
-    print(f"\nFold {i}")
-    train_dataset = tokenized_datasets['train'].select(train_index)    
-    valid_dataset = tokenized_datasets['train'].select(valid_index)
+tokenizer          = AutoTokenizer.from_pretrained(model_checkpoint)
+tokenized_datasets = make_dataset()
+data_collator      = DataCollatorForTokenClassification(tokenizer=tokenizer)
+
+
+####################### . Training . #######################
+def train_model_kfold():
+    best_f5_score = -1.0
+    best_trainer = None
+    gkf = GroupKFold(n_splits=CFG.fold)
+    gkf_dataset = gkf.split(X=tokenized_datasets['train'],
+                            y=tokenized_datasets['train']['labels'],
+                            groups=tokenized_datasets['train']['fold'])
+    for i, (train_index, valid_index) in enumerate(gkf_dataset):
+        print(f"\nFold {i}")
+        train_dataset = tokenized_datasets['train'].select(train_index)    
+        valid_dataset = tokenized_datasets['train'].select(valid_index)
+
+        config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
+        model = AutoModelForTokenClassification.from_pretrained(
+            model_checkpoint, config=config).to(device)
+
+        args = TrainingArguments(
+            disable_tqdm=False,
+            output_dir=f"bert-finetune-ner_{i}", 
+            ## output_dir=f"bert-finetune-ner", 
+            evaluation_strategy="steps",           #--
+            ## evaluation_strategy="epoch"
+            eval_steps=1000,                       #--
+            fp16=True,
+            save_strategy="no",
+            per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
+            per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
+            learning_rate=2e-5,                    #--
+            num_train_epochs=CFG.epoch,            #--
+            # load_best_model_at_end=True,
+            weight_decay=0.01,                     #--
+            push_to_hub=False,
+            report_to="none",
+            log_level="error",
+        )
+
+        trainer = CustomTrainer(
+            model=model,
+            args=args,
+            train_dataset=train_dataset,
+            eval_dataset=valid_dataset,
+            data_collator=data_collator,
+            compute_metrics=compute_metrics,
+            tokenizer=tokenizer,
+        )
+
+        # train model
+        trainer.train()
+
+        # evaluate model with valid dataset to get the best model
+        eval_result = trainer.evaluate()
+        print(f"f5: {eval_result['eval_f5']}")
+
+        # TODO: for ansamble (but this process takes about 20min if the size of the test dataset is 20,000.)
+        # prediction = trainer.predict(tokenized_datasets['test'])
+        # label_predictions = np.argmax(prediction.predictions, axis=-1)
+
+        if best_f5_score < eval_result['eval_f5']:
+            best_f5_score = eval_result['eval_f5']
+            best_trainer = trainer
+
+    return best_trainer
+
+
+def train_model_optuna():
+    args = TrainingArguments(
+        disable_tqdm=False,
+        output_dir="bert-finetune-ner", 
+        evaluation_strategy="epoch",
+        fp16=True,
+        save_strategy="no",
+        per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
+        per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
+        push_to_hub=False,
+        report_to="none",
+        log_level="error",
+    )
+
+    all_train_dataset = tokenized_datasets['train']
+    dataset_index = [i for i in range(len(all_train_dataset))]
+    train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
+    valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
+    train_dataset = all_train_dataset.select(train_index)
+    valid_dataset = all_train_dataset.select(valid_index)
+
+    trainer = Trainer(
+        model=None,
+        args=args,
+        train_dataset=train_dataset,
+        eval_dataset=valid_dataset,
+        compute_metrics=compute_metrics,
+        tokenizer=tokenizer,
+        model_init=model_init,
+        data_collator=data_collator,
+    )
+
+    best_trails = trainer.hyperparameter_search(
+        direction="maximize",
+        backend="optuna",
+        hp_space=optuna_hp_space,
+        n_trials=50,
+        compute_objective=compute_objective
+    )
+
+    # https://rightcode.co.jp/blog/information-technology/torch-optim-optimizer-compare-and-verify-update-process-and-performance-of-optimization-methods
+    # classes = ['SGD', 'Adagrad', 'RMSprop', 'Adadelta', 'Adam', 'AdamW']
+    # weight decay is the parameter for AdamW
+    # when sould I use suggest_categorical to choose optimizer?
+    print(best_trails)
+
+
+def train_model_simple():
+    all_train_dataset = tokenized_datasets['train']
+    dataset_index = [i for i in range(len(all_train_dataset))]
+    train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
+    valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
+    train_dataset = all_train_dataset.select(train_index)
+    valid_dataset = all_train_dataset.select(valid_index)
 
     config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
     model = AutoModelForTokenClassification.from_pretrained(
@@ -352,17 +487,17 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
         disable_tqdm=False,
         output_dir=f"bert-finetune-ner_{i}", 
         ## output_dir=f"bert-finetune-ner", 
-        evaluation_strategy="steps",           #--
+        evaluation_strategy="steps",                #--
         ## evaluation_strategy="epoch"
-        eval_steps=1000,                       #--
+        eval_steps=1000,                            #--
         fp16=True,
         save_strategy="no",
-        per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
-        per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-        learning_rate=2e-5,                    #--
-        num_train_epochs=CFG.epoch,            #--
+        per_device_train_batch_size=CFG.batch_size,
+        per_device_eval_batch_size=CFG.batch_size,
+        learning_rate=2e-5,                         #--
+        num_train_epochs=CFG.epoch,                 #--
         # load_best_model_at_end=True,
-        weight_decay=0.01,                     #--
+        weight_decay=0.01,                          #--
         push_to_hub=False,
         report_to="none",
         log_level="error",
@@ -381,22 +516,25 @@ for i, (train_index, valid_index) in enumerate(gkf_dataset):
     # train model
     trainer.train()
 
-    # evaluate model with valid dataset to get the best model
-    eval_result = trainer.evaluate()
-    print(f"f5: {eval_result['eval_f5']}")
 
-    # TODO: for ansamble (but this process takes about 20min if the size of the test dataset is 20,000.)
-    # prediction = trainer.predict(tokenized_datasets['test'])
-    # label_predictions = np.argmax(prediction.predictions, axis=-1)
 
-    if best_f5_score < eval_result['eval_f5']:
-        best_f5_score = eval_result['eval_f5']
-        best_trainer = trainer
+####################### . Main . #######################
 
+trainer = train_model_kfold()
+# trainer = train_model_simple(tokenized_datasets)
+# trainer = train_model_optuna(tokenized_datasets
+
+
+
+
+
+
+
+####################### . Submission  . #######################
 
 # predict labels 
 test_datasets     = tokenized_datasets['test']
-prediction        = best_trainer.predict(test_datasets)  # PredictionOutput Object
+prediction        = trainer.predict(test_datasets)  # PredictionOutput Object
 label_predictions = np.argmax(prediction.predictions, axis=-1)  # (data_size, token max length)
 
 # create submission file
