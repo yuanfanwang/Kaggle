@@ -53,9 +53,11 @@ v4.0
 
 v5.0
     debug f5 loss function
-    try the model in code the score is 0.966
     why the model got good score in the image optuna2 
     CustomTrainer を　Trainerに変更　LossをCrossEntropyに変更
+    try the model in code the score is 0.966
+    validation label 0 ~ 1 それぞれ個別に
+    recall model, precision model 作って加重平均とる？
 
 
 v6.0

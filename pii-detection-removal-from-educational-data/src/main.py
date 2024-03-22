@@ -35,16 +35,17 @@ class CFG:
     sample_data_size = None
     use_optuna = False
     train_kwargs = {
-        "evaluation_strategy": "epoch",
-        "logging_steps": 500,
+        "evaluation_strategy": "steps",
+        "eval_steps": 500,
+        "logging_steps": 250,
         "save_strategy": "no",
-        "learning_rate": 2e-5,
-        "num_train_epochs": 3,
+        "learning_rate": 1e-5,
+        "num_train_epochs": 10,
         "weight_decay": 0.01,
     }
     optuna_kwargs = {
         "evaluation_strategy": "epoch",
-        "logging_steps": 500,
+        "logging_steps": 250,
         "save_strategy": "no",
         # "learning_rate": 
         # "num_train_epochs":
@@ -140,12 +141,18 @@ class SoftF5Loss(nn.Module):
         probs = probs[1:-1]
         one_hot_labels = one_hot_labels[1:-1]
 
+        new_probs = torch.zeros_like(probs)
+        for i, label in enumerate(probs):
+            new_probs[i] = label / torch.sum(label)
+        # probs = new_probs
+
         # Calculate F5
         tp = torch.sum(probs * one_hot_labels, dim=0)
         fp = torch.sum(probs * (1 - one_hot_labels), dim=0)
         fn = torch.sum((1 - probs) * one_hot_labels, dim=0)
 
-        soft_f5 = (1 + 5**2)*tp / ((5**2)*tp + fn + fp + self.smooth)
+        beta = 5
+        soft_f5 = ((1 + beta**2)*tp) / ((1 + beta**2)*tp + (beta**2)*fn + fp + self.smooth)
         cost = 1 - soft_f5 # subtract from 1 to get cost
 
         # TODO: mean or sum?
@@ -158,7 +165,8 @@ class CustomTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False):
         outputs = model(**inputs)
-        loss_fct = SoftF5Loss()  # nn.CrossEntropyLoss() for default
+        loss_fct = SoftF5Loss()
+        # loss_fct = nn.CrossEntropyLoss()
         labels = inputs.pop("labels").view(-1)
         logits = outputs.get('logits').view(-1, self.model.config.num_labels)
         loss = loss_fct(logits, labels)
@@ -380,7 +388,7 @@ def make_dataset():
 
 
 def f_score(precision, recall, beta=1):
-    epsilon = 1e-7
+    epsilon = 1e-16
     return (1 + beta ** 2) * (precision * recall) / (beta ** 2 * precision + recall + epsilon)
 
 
@@ -414,6 +422,7 @@ def optuna_hp_space(trial):
 
 def model_init(trial):
     config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
+    config.hidden_dropout_prob = 0.2
     # OPTUNA: hidden_dropout_prob, attention_probs_dropout_prob
     if trial is not None:
         config.hidden_dropout_prob = trial.suggest_float("hidden_dropout_prob", 1e-2, 1.0)                   # 0.1 as default
@@ -433,7 +442,7 @@ def create_trainer(train_dataset, valid_dataset, **kwargs):
         output_dir=f"bert_fold{kwargs.get('fold', '')}", 
         evaluation_strategy=kwargs.get('evaluation_strategy', 'epoch'),
         eval_steps=kwargs.get('eval_steps', None),
-        logging_steps=kwargs.get('eval_steps', 500),  # same as eval_steps
+        logging_steps=kwargs.get('logging_steps', 500),  # same as eval_steps
         save_strategy=kwargs.get('save_strategy', 'no'),
         learning_rate=kwargs.get('learning_rate', 2e-5),
         num_train_epochs=kwargs.get('num_train_epochs', 3),
