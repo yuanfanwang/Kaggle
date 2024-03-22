@@ -72,7 +72,7 @@ then, optuna again
 
 v7.0
 read the tips for improve the model in LLM competitions
-EarlyStopping: https://dev.classmethod.jp/articles/huggingface-usage-early-stopping/
+EarlyStopping: https://dev.classmethod.jp/articles/huggingface-usage-early-stopping/ and https://qiita.com/m__k/items/2c4e476d7ac81a3a44af
 consider trailing_whitespace
 LSTM after deberta
 /n/n -> to some special token like [KAIGYO]

@@ -13,17 +13,19 @@ import random
 import sys
 import torch
 
-import numpy    as np
-import pandas   as pd
-import polars   as pl
-import torch.nn as nn
+import matplotlib.pyplot as plt
+import numpy             as np
+import pandas            as pd
+import polars            as pl
+import torch.nn          as nn
 
 from datasets                import (Dataset, DatasetDict)
 from seqeval.metrics         import (accuracy_score, f1_score, precision_score, recall_score)
 from sklearn.model_selection import GroupKFold
 from tqdm                    import tqdm
 from transformers            import (AutoModelForTokenClassification, AutoTokenizer, AutoConfig,
-                                     DataCollatorForTokenClassification, Trainer, TrainingArguments)
+                                     DataCollatorForTokenClassification, Trainer, TrainingArguments,
+                                     TrainerCallback, TrainerState, TrainerControl)
 from typing                  import Dict
 
 
@@ -33,8 +35,8 @@ class CFG:
     sample_data_size = None
     use_optuna = False
     train_kwargs = {
-        "evaluation_strategy": "steps",
-        "eval_steps": 1000,
+        "evaluation_strategy": "epoch",
+        # "eval_steps": 1000,
         "save_strategy": "no",
         "learning_rate": 2e-5,
         "num_train_epochs": 10,
@@ -161,6 +163,17 @@ class CustomTrainer(Trainer):
         logits = outputs.get('logits').view(-1, self.model.config.num_labels)
         loss = loss_fct(logits, labels)
         return (loss, outputs) if return_outputs else loss
+
+
+class LossCallback(TrainerCallback):
+    def __init__(self):
+        super().__init__()
+        self.losses = []
+
+    def on_log(self, args, state: TrainerState, control: TrainerControl, logs=None, **kwargs):
+        if state.is_local_process_zero:
+            print(logs)
+            # self.losses.append(logs['loss'])
 
 
 def align_labels_with_tokens(labels, word_ids):
@@ -357,8 +370,8 @@ def compute_metrics(eval_preds):
 def optuna_hp_space(trial):
     # OPTUNA: learning_rate, num_train_epochs, weight_decay
     return {
-        "learning_rate": trial.suggest_float("learning_rate", 1e-8, 1e-4), # 2e-5  as default
-        "num_train_epochs": trial.suggest_int("num_train_epochs", 1, 5),   # 3     as default
+        "learning_rate": trial.suggest_float("learning_rate", 1e-7, 1e-3), # 2e-5  as default
+        "num_train_epochs": trial.suggest_int("num_train_epochs", 3, 5),   # 3     as default
         "weight_decay": trial.suggest_float("weight_decay", 1e-3, 1e-1),   # 0.01  as default
         # "optimizer": "AdamW",
     }
@@ -399,6 +412,9 @@ def create_trainer(train_dataset, valid_dataset, **kwargs):
         per_device_eval_batch_size=CFG.batch_size,
         # load_best_model_at_end=True,
     )
+
+    loss_callback = LossCallback()
+
     trainer = CustomTrainer(
         model_init=model_init,
         args=args,
@@ -407,6 +423,7 @@ def create_trainer(train_dataset, valid_dataset, **kwargs):
         data_collator=data_collator,
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
+        callbacks=[loss_callback],
     )
     return trainer
 
