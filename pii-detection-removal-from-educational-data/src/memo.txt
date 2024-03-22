@@ -43,22 +43,27 @@ b5 threthold 0.9
 
 
 v4.0
-    1. update refactoring main and raletive files.
-    2. run optuna again
-    3. submit the result with tuned hyperparameters and the custom loss function
-    4. deberta model 保存方法
-    5. kfoldなしoptuna->kfoldなしmodel保存->submit
-    5. kfoldなしoptuna->kfoldあり全model保存->submit 
-    7. display learning curve 
-
-
+    (done) 1. update refactoring main and raletive files.
+    ( !!! skip) 2. run optuna again
+    ( !!! skip) 3. submit the result with tuned hyperparameters and the custom loss function
+    ( !!! skip) 4. deberta model 保存方法
+    ( !!! skip) 5. kfoldなしoptuna->kfoldなしmodel保存->submit
+    ( !!! skip) 6. kfoldなしoptuna->kfoldあり全model保存->submit 
+    (done) 7. display learning curve 
 
 v5.0
+    debug f5 loss function
+    try the model in code the score is 0.966
+    why the model got good score in the image optuna2 
+    CustomTrainer を　Trainerに変更　LossをCrossEntropyに変更
+
+
+v6.0
 enable google colab to use optuna
 
 
 
-v6.0
+v7.0
 create new dataset to make oputuna to select the best parameter more practically
 不均衡データ 適切な重み付け　または　訓練データを均衡にしする　適切な重み付けをしたときの訓練データの均衡度の調整が必要になったりする？   
     https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/472221
@@ -70,7 +75,7 @@ then, optuna again
 
 
 
-v7.0
+v8.0
 read the tips for improve the model in LLM competitions
 EarlyStopping: https://dev.classmethod.jp/articles/huggingface-usage-early-stopping/ and https://qiita.com/m__k/items/2c4e476d7ac81a3a44af
 consider trailing_whitespace
@@ -83,7 +88,7 @@ input min, av, max, std to LGBM
 
 
 
-v7.5
+v9.5
 optuna again
     include pruning optuna
     classificate the process of optuna to enable the optuna to select the best parameter whenever I want to
@@ -99,7 +104,7 @@ optuna again
     
 
 
-v8.0
+v10.0
 find the other model to ansamble
     gemma
 

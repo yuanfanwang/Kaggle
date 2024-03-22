@@ -36,20 +36,20 @@ class CFG:
     use_optuna = False
     train_kwargs = {
         "evaluation_strategy": "epoch",
-        # "eval_steps": 1000,
+        "logging_steps": 500,
         "save_strategy": "no",
         "learning_rate": 2e-5,
-        "num_train_epochs": 10,
+        "num_train_epochs": 3,
         "weight_decay": 0.01,
     }
     optuna_kwargs = {
         "evaluation_strategy": "epoch",
-        # "eval_steps":
+        "logging_steps": 500,
         "save_strategy": "no",
         # "learning_rate": 
         # "num_train_epochs":
         # "weight_decay":
-        "n_trials": 50,
+        "n_trials": 20,
     }
     # parameters are defined in optuna_hp_space and model_init as well
 
@@ -168,12 +168,47 @@ class CustomTrainer(Trainer):
 class LossCallback(TrainerCallback):
     def __init__(self):
         super().__init__()
-        self.losses = []
+        self.current_epoch = 0
+        # depends on logging_steps
+        self.eval_f5 = []
+        self.logging_epoch = []
+        # depends on eval_steps
+        self.training_loss = []
+        self.validation_loss = []
+        self.eval_epoch = []
 
     def on_log(self, args, state: TrainerState, control: TrainerControl, logs=None, **kwargs):
         if state.is_local_process_zero:
-            print(logs)
-            # self.losses.append(logs['loss'])
+            if ('loss' in logs) and ('epoch' in logs):
+                self.training_loss.append(logs['loss'])
+                self.logging_epoch.append(logs['epoch'])
+            if ('eval_f5' in logs) and ('eval_loss' in logs) and ('epoch' in logs):
+                self.eval_f5.append(logs['eval_f5'])
+                self.validation_loss.append(logs['eval_loss'])
+                self.eval_epoch.append(logs['epoch'])
+                if self.current_epoch < int(logs['epoch'] / 1):
+                    self.current_epoch = int(logs['epoch'] / 1)
+                    self.plot_all()
+
+    def clear(self):
+        self.current_epoch = -1
+        self.eval_f5 = []
+        self.logging_epoch = []
+        self.training_loss = []
+        self.validation_loss = []
+        self.eval_epoch = []
+        pass
+        
+    def plot_all(self):
+        plt.figure(figsize=(10, 5))
+        plt.plot(self.logging_epoch, self.training_loss, label='Training Loss', color='blue')
+        plt.plot(self.eval_epoch, self.validation_loss, label='Validation Loss', color='orange')
+        plt.plot(self.eval_epoch, self.eval_f5, label='F5', color='green')
+        plt.title('Training and Evaluation Metrics')
+        plt.xlabel('Epoch')
+        plt.ylabel('Metric Value')
+        plt.legend()
+        plt.show()
 
 
 def align_labels_with_tokens(labels, word_ids):
@@ -398,6 +433,7 @@ def create_trainer(train_dataset, valid_dataset, **kwargs):
         output_dir=f"bert_fold{kwargs.get('fold', '')}", 
         evaluation_strategy=kwargs.get('evaluation_strategy', 'epoch'),
         eval_steps=kwargs.get('eval_steps', None),
+        logging_steps=kwargs.get('eval_steps', 500),  # same as eval_steps
         save_strategy=kwargs.get('save_strategy', 'no'),
         learning_rate=kwargs.get('learning_rate', 2e-5),
         num_train_epochs=kwargs.get('num_train_epochs', 3),
@@ -413,8 +449,7 @@ def create_trainer(train_dataset, valid_dataset, **kwargs):
         # load_best_model_at_end=True,
     )
 
-    loss_callback = LossCallback()
-
+    plot_loss_callback.clear()
     trainer = CustomTrainer(
         model_init=model_init,
         args=args,
@@ -423,8 +458,9 @@ def create_trainer(train_dataset, valid_dataset, **kwargs):
         data_collator=data_collator,
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
-        callbacks=[loss_callback],
+        callbacks=[plot_loss_callback],
     )
+
     return trainer
 
 
@@ -437,6 +473,7 @@ def create_trainer(train_dataset, valid_dataset, **kwargs):
 tokenizer          = AutoTokenizer.from_pretrained(model_checkpoint)
 tokenized_datasets = make_dataset()
 data_collator      = DataCollatorForTokenClassification(tokenizer=tokenizer)
+plot_loss_callback = LossCallback()
 
 
 
