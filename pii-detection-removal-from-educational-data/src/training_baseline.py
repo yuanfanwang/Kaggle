@@ -1,24 +1,23 @@
-"""
+""" install offline
 !pip install "/kaggle/input/seqeval/seqeval-1.2.2-py3-none-any.whl"
 """
 
-import copy
-import optuna
 import os
 import random
 import sys
 import torch
 
-import numpy as np
-import pandas as pd
-import polars as pl
+import numpy    as np
+import pandas   as pd
+import polars   as pl
+import torch.nn as nn
 
-from datasets import Dataset, DatasetDict
+from datasets                import (Dataset, DatasetDict)
+from seqeval.metrics         import (accuracy_score, f1_score, precision_score, recall_score)
 from sklearn.model_selection import GroupKFold
-from tqdm import tqdm
-from transformers import AutoTokenizer, DataCollatorForTokenClassification, AutoConfig,\
-                         AutoModelForTokenClassification, TrainingArguments, Trainer
-from seqeval.metrics import precision_score, recall_score, accuracy_score, f1_score
+from tqdm                    import tqdm
+from transformers            import (AutoModelForTokenClassification, AutoTokenizer, AutoConfig,
+                                     DataCollatorForTokenClassification, Trainer, TrainingArguments)
 
 
 class CFG:
@@ -45,6 +44,7 @@ seed_everything(seed=42)
 torch.cuda.empty_cache()
 np.object = object
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 if CFG.local:
     data_path = "data/"
@@ -269,18 +269,57 @@ def compute_metrics(eval_preds):
         "accuracy": accuracy_score(true_labels, true_predictions),
     }
 
-args = TrainingArguments(
-    disable_tqdm=False,
-    output_dir="bert-finetune-ner", 
-    evaluation_strategy="epoch",
-    fp16=True,
-    save_strategy="no",
-    per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
-    per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
-    push_to_hub=False,
-    report_to="none",
-    log_level="error",
-)
+
+class SoftF5Loss(nn.Module):
+    def __init__(self, smooth=1e-16):
+        super(SoftF5Loss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, logits, labels):
+        # logits:  [token_len, num_labels]
+        # labels:  [token_len]
+        # loss  :  []
+
+        # adjust labels size to logits size [token_len] -> [token_len, num_labels]
+        one_hot_labels = torch.zeros_like(logits)
+        for i, target in enumerate(labels):
+            # Since -100 is special token, it must be skiped
+            if target == -100:
+                continue
+            one_hot_labels[i][target] = 1 
+
+        # TODO: need to normalize probs?. Why I think so is that
+        #       it is intuitive that each of the 15 labels has a probability, and summing them all together yields 1.
+        probs = torch.sigmoid(logits)
+
+        # remove first and end to avoid special token -100
+        probs = probs[1:-1]
+        one_hot_labels = one_hot_labels[1:-1]
+
+        # Calculate F5
+        tp = torch.sum(probs * one_hot_labels, dim=0)
+        fp = torch.sum(probs * (1 - one_hot_labels), dim=0)
+        fn = torch.sum((1 - probs) * one_hot_labels, dim=0)
+
+        soft_f5 = (1 + 5**2)*tp / ((5**2)*tp + fn + fp + self.smooth)
+        cost = 1 - soft_f5 # subtract from 1 to get cost
+
+        # TODO: mean or sum?
+        return cost.mean()
+
+
+class CustomTrainer(Trainer):
+    def __init__(self, *args, **kwargs):
+       super().__init__(*args, **kwargs)
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        outputs = model(**inputs)
+        loss_fct = SoftF5Loss()  # nn.CrossEntropyLoss() for default
+        labels = inputs.pop("labels").view(-1)
+        logits = outputs.get('logits').view(-1, self.model.config.num_labels)
+        loss = loss_fct(logits, labels)
+        return (loss, outputs) if return_outputs else loss
+
 
 all_train_dataset = tokenized_datasets['train']
 dataset_index = [i for i in range(len(all_train_dataset))]
@@ -290,17 +329,72 @@ train_dataset = all_train_dataset.select(train_index)
 valid_dataset = all_train_dataset.select(valid_index)
 
 config = AutoConfig.from_pretrained(model_checkpoint, id2label=id2label, label2id=label2id)
-model = AutoModelForTokenClassification.from_pretrained(model_checkpoint, config=config).to(device)
+model = AutoModelForTokenClassification.from_pretrained(
+    model_checkpoint, config=config).to(device)
 
-trainer = Trainer(
+args = TrainingArguments(
+    disable_tqdm=False,
+    output_dir=f"bert-finetune-ner_{i}", 
+    ## output_dir=f"bert-finetune-ner", 
+    evaluation_strategy="steps",           #--
+    ## evaluation_strategy="epoch"
+    eval_steps=1000,                       #--
+    fp16=True,
+    save_strategy="no",
+    per_device_train_batch_size=CFG.batch_size,  # 1 is not out of memory
+    per_device_eval_batch_size=CFG.batch_size,   # 1 is not out of memory
+    learning_rate=2e-5,                    #--
+    num_train_epochs=CFG.epoch,            #--
+    # load_best_model_at_end=True,
+    weight_decay=0.01,                     #--
+    push_to_hub=False,
+    report_to="none",
+    log_level="error",
+)
+
+trainer = CustomTrainer(
     model=model,
     args=args,
     train_dataset=train_dataset,
     eval_dataset=valid_dataset,
+    data_collator=data_collator,
     compute_metrics=compute_metrics,
     tokenizer=tokenizer,
-    data_collator=data_collator,
 )
 
 # train model
 trainer.train()
+
+
+# predict labels 
+test_datasets     = tokenized_datasets['test']
+prediction        = trainer.predict(test_datasets)  # PredictionOutput Object
+label_predictions = np.argmax(prediction.predictions, axis=-1)  # (data_size, token max length)
+
+# create submission file
+row_id_sub, document_sub, token_sub, label_sub = [], [], [], []
+test_df = pd.DataFrame(test_datasets)
+for i, labels in enumerate(label_predictions):
+    word_ids = test_df.at[i, 'word_ids']
+    document = test_df.at[i, 'document']
+    current_id = None
+    for j, (pii_idx, word_id) in enumerate(zip(labels, word_ids)):
+        if word_id == None: continue
+        if current_id != word_id:
+            current_id = word_id
+            if pii_idx != 0:
+                row_id_sub.append(len(row_id_sub))
+                document_sub.append(document)
+                token_sub.append(word_id)
+                label_sub.append(label_names[pii_idx])
+
+submission = {
+    'row_id': row_id_sub,
+    'document': document_sub,
+    'token': token_sub,
+    'label': label_sub
+}
+
+submission = pd.DataFrame(submission)
+print(submission.head())
+submission.to_csv("submission.csv", index=False)

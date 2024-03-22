@@ -12,19 +12,17 @@ import random
 import sys
 import torch
 
-import numpy as np
-import pandas as pd
-import polars as pl
+import numpy    as np
+import pandas   as pd
+import polars   as pl
 import torch.nn as nn
 
-from datasets import Dataset, DatasetDict
-from seqeval.metrics import (accuracy_score, f1_score, precision_score,
-                             recall_score)
+from datasets                import (Dataset, DatasetDict)
+from seqeval.metrics         import (accuracy_score, f1_score, precision_score, recall_score)
 from sklearn.model_selection import GroupKFold
-from tqdm import tqdm
-from transformers import (AutoModelForTokenClassification, AutoTokenizer, AutoConfig,
-                          DataCollatorForTokenClassification, Trainer,
-                          TrainingArguments)
+from tqdm                    import tqdm
+from transformers            import (AutoModelForTokenClassification, AutoTokenizer, AutoConfig,
+                                     DataCollatorForTokenClassification, Trainer, TrainingArguments)
 
 
 class CFG:
@@ -328,12 +326,12 @@ class CustomTrainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 
-# all_train_dataset = tokenized_datasets['train']
-# dataset_index = [i for i in range(len(all_train_dataset))]
-# train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
-# valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
-# train_dataset = all_train_dataset.select(train_index)
-# valid_dataset = all_train_dataset.select(valid_index)
+all_train_dataset = tokenized_datasets['train']
+dataset_index = [i for i in range(len(all_train_dataset))]
+train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
+valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
+train_dataset = all_train_dataset.select(train_index)
+valid_dataset = all_train_dataset.select(valid_index)
 
 best_f5_score = -1.0
 best_trainer = None
