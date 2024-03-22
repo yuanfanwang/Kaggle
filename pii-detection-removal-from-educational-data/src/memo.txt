@@ -49,6 +49,7 @@ v4.0
     4. deberta model 保存方法
     5. kfoldなしoptuna->kfoldなしmodel保存->submit
     5. kfoldなしoptuna->kfoldあり全model保存->submit 
+    7. display learning curve 
 
 
 
