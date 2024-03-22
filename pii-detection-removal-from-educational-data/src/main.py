@@ -141,9 +141,10 @@ class SoftF5Loss(nn.Module):
         probs = probs[1:-1]
         one_hot_labels = one_hot_labels[1:-1]
 
-        new_probs = torch.zeros_like(probs)
-        for i, label in enumerate(probs):
-            new_probs[i] = label / torch.sum(label)
+        # Normalize might be nonsense ...
+        # new_probs = torch.zeros_like(probs)
+        # for i, label in enumerate(probs):
+        #     new_probs[i] = label / torch.sum(label)
         # probs = new_probs
 
         # Calculate F5

@@ -61,6 +61,7 @@ v5.0
 
     new_probs
     tp fp tn costs visualize
+    なぜ0.8で止まる？　0.8 はなんの数字？
 
 v6.0
 enable google colab to use optuna
