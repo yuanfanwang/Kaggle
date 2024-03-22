@@ -594,7 +594,7 @@ else:
                 if pii_idx != 0:
                     row_id_sub.append(len(row_id_sub))
                     document_sub.append(document)
-                    token_sub.append(word_id)
+                    token_sub.append(int(word_id))
                     label_sub.append(label_names[pii_idx])
 
     submission = {
