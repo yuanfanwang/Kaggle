@@ -32,6 +32,7 @@ from typing                  import Dict
 ####################### . Config . #######################
 class CFG:
     ## variable
+    train_with_only_gen_data = True
     sample_data_size = None
     use_optuna = False
     train_kwargs = {
@@ -497,9 +498,13 @@ plot_loss_callback = LossCallback()
 ####################### . Training . #######################
 def train_model_simple():
     all_train_dataset = tokenized_datasets['train']
-    dataset_index = [i for i in range(len(all_train_dataset))]
-    train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
-    valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
+    if CFG.train_with_only_gen_data:
+        train_index = [i for i in range(len(all_train_dataset)) if all_train_dataset['document'][i] >= 10000]
+        valid_index = [i for i in range(len(all_train_dataset)) if all_train_dataset['document'][i] < 10000]
+    else:
+        dataset_index = [i for i in range(len(all_train_dataset))]
+        train_index = dataset_index[:int(len(all_train_dataset)*0.8)]
+        valid_index = dataset_index[int(len(all_train_dataset)*0.8):]
     train_dataset = all_train_dataset.select(train_index)
     valid_dataset = all_train_dataset.select(valid_index)
 
