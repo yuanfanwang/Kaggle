@@ -338,6 +338,12 @@ def split_below_max_length(df: pl.DataFrame):
 
 def make_train_dataset():
     train_df = pl.read_json(data_path + "train.json")
+    if not CFG.local:
+        faker_df = pl.read_json("/kaggle/input/pii-dd-mistral-generated/mixtral-8x7b-v1.json")
+        new_series = pl.Series([int(f"10000{i}") for i in range(len(faker_df))])
+        faker_df.replace("document", new_series)
+        faker_df = faker_df.select(["document", "full_text", "tokens", "trailing_whitespace", "labels"])
+        train_df = pl.concat([train_df, faker_df])
     if CFG.downsampling:
         train_df = train_df.filter(pl.col('labels').map_elements(lambda x: not all(label == 'O' for label in x)))
     train_df = train_df.to_pandas()
