@@ -132,7 +132,7 @@ class SoftF5Loss(nn.Module):
 
         # TODO: need to normalize probs?. Why I think so is that
         #       it is intuitive that each of the 15 labels has a probability, and summing them all together yields 1.
-        probs = torch.sigmoid(logits)
+        probs = torch.sigmoid(logits) # TODO: sigmoid の曲率を上げる
 
         # remove first and end to avoid special token -100
         probs = probs[indices]
@@ -142,7 +142,13 @@ class SoftF5Loss(nn.Module):
         tp = torch.sum(probs * one_hot_labels, dim=0)
         fp = torch.sum(probs * (1 - one_hot_labels), dim=0)
         fn = torch.sum((1 - probs) * one_hot_labels, dim=0)
+        # tn = torch.sum((1 - probs) * (1 - one_hot_labels), dim=0)
 
+        # label 0   と判定するのは基本的にpositiveなのでtpかfnが大きい
+        # label 0以外と判定するのは基本的にnegativeなのでfpかtnが大きい
+        # よって 以下の式より label 0 は soft_f5 が大きく label 0以外は小さい
+        # これはデータの不足を意味しているはず, label 0 以外 の fp と tn の大きさが同じということは学習が初期段階だから
+        # または sigmoid の曲率が不足しているからだと考えるので、両者を試す
         beta = 5
         soft_f5 = ((1 + beta**2)*tp) / ((1 + beta**2)*tp + (beta**2)*fn + fp + self.smooth)
         cost = 1 - soft_f5 # subtract from 1 to get cost
